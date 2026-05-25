@@ -6,17 +6,17 @@ A complete VPS management solution inspired by LarVPS. Features a **Bash CLI** f
 
 ```
 ┌──────────────────────────┐         ┌───────────────────────────────────┐
-│   Web Dashboard (React)  │──API──▶ │  VPS Server                      │
+│  Dashboard (48KB HTML/JS)│──API──▶ │  VPS Server                      │
 │   Runs anywhere:         │         │  ┌──────────────────────────┐    │
-│   - Vercel/Netlify       │◀──WS─── │  │  Agent (Node.js ~15MB)   │    │
-│   - Docker               │         │  │  Port 9090               │    │
-│   - Local machine        │         │  └──────────┬───────────────┘    │
+│   - Agent built-in       │◀──WS─── │  │  Agent (Node.js ~15MB)   │    │
+│   - Any static host      │         │  │  Port 9090               │    │
+│   - Just open HTML       │         │  └──────────┬───────────────┘    │
 │                          │         │             │ exec                │
-│   Features:              │         │  ┌──────────▼───────────────┐    │
-│   - Multi-server mgmt    │         │  │  CLI (myvps)             │    │
-│   - Real-time monitoring │         │  │  Bash scripts            │    │
-│   - Domain/DB/SSL/etc    │         │  └──────────┬───────────────┘    │
-│   - Server switching     │         │             │                    │
+│   Zero dependencies:     │         │  ┌──────────▼───────────────┐    │
+│   - No npm, no build     │         │  │  CLI (myvps)             │    │
+│   - Pure HTML/CSS/JS     │         │  │  Bash scripts            │    │
+│   - 4 files, 48KB total  │         │  └──────────┬───────────────┘    │
+│   - Multi-server mgmt    │         │             │                    │
 └──────────────────────────┘         │  ┌──────────▼───────────────┐    │
                                      │  │  Nginx  PHP-FPM  MariaDB │    │
                                      │  │  Redis  Memcached  etc   │    │
@@ -27,7 +27,7 @@ A complete VPS management solution inspired by LarVPS. Features a **Bash CLI** f
 ## Key Design Decisions
 
 - **Agent is ultra-lightweight** (~15MB RAM) - runs on the VPS with minimal impact
-- **Dashboard runs separately** - deploy on Vercel, Netlify, or any static host
+- **Dashboard is ultra-lightweight** (~48KB) - pure HTML/CSS/JS, zero dependencies, no npm/build
 - **Multi-server support** - one dashboard manages multiple VPS servers
 - **API-first** - all operations via REST API + WebSocket for real-time data
 - **CLI still works independently** - SSH into server and use `myvps` command directly
@@ -57,13 +57,14 @@ Lightweight Node.js API server running on the VPS:
 - WebSocket for real-time monitoring (CPU, RAM, Disk, Services)
 - Port 9090 by default
 
-### 3. Web Dashboard (`web/frontend/`)
-React SPA for remote VPS management:
-- Connect to multiple VPS agents
-- Real-time dashboard with CPU/RAM/Disk gauges
-- Domain, Database, SSL, PHP, Service management
-- Server switching in sidebar
-- Built with React 18 + Tailwind CSS + Vite
+### 3. Dashboard (`dashboard/`)
+Ultra-lightweight web UI (~48KB total, pure HTML/CSS/JS):
+- **Zero dependencies** - no npm, no build step, no React, no framework
+- 4 files: `index.html` + `css/style.css` + `js/app.js` + `js/ui.js` + `js/pages.js`
+- Served directly by Agent or open as standalone HTML
+- Multi-server support - manage multiple VPS from one dashboard
+- Real-time monitoring via WebSocket
+- Domain, Database, SSL, PHP, Service, Firewall, Cache, Backup management
 
 ### 4. Installer (`install.sh`)
 Auto-setup script for LEMP stack:
@@ -86,13 +87,14 @@ npm start
 # Agent runs on port 9090
 ```
 
-### Run Dashboard (anywhere)
+### Access Dashboard
 ```bash
-cd web/frontend
-npm install
-npm run dev
-# Dashboard runs on port 3000
-# Connect to your VPS agent via URL + API key
+# Option 1: Built into Agent - just open browser
+open http://your-vps:9090
+
+# Option 2: Standalone - just open the HTML file
+open dashboard/index.html
+# No npm install, no build, nothing to install
 ```
 
 ### CLI Usage

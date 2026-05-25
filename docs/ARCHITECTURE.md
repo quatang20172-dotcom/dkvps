@@ -51,13 +51,14 @@
 - **Endpoints**: REST for all management + WebSocket for monitoring
 - **Security**: Runs behind VPS firewall, JWT-protected
 
-### Dashboard (runs anywhere) - `web/frontend/`
+### Dashboard (runs anywhere) - `dashboard/`
 - **Purpose**: Rich UI for managing VPS servers
-- **Deployment**: Static SPA - Vercel, Netlify, Docker, local
+- **Size**: ~48KB total (HTML + CSS + JS)
+- **Dependencies**: Zero - pure vanilla HTML/CSS/JS
+- **Deployment**: Served by Agent, or open HTML file directly, or any static host
 - **Auth**: Connects to Agent using API key, stores JWT in localStorage
 - **Multi-server**: Manages multiple VPS agents from one UI
-- **Framework**: React 18 + Tailwind CSS + Vite
-- **State**: ServerContext manages connections, api clients
+- **No build step**: No npm, no webpack, no framework - just 4 files
 
 ### CLI (runs on VPS) - `cli/`
 - **Purpose**: Direct server management via SSH

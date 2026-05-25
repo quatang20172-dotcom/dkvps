@@ -85,6 +85,13 @@ app.use('/api/firewall', authMiddleware, firewall);
 app.use('/api/cache', authMiddleware, cache);
 app.use('/api/backup', authMiddleware, backup);
 
+// Serve static dashboard (optional - dashboard can also run standalone)
+const dashboardPath = path.join(__dirname, '..', 'dashboard');
+if (fs.existsSync(dashboardPath)) {
+    app.use(express.static(dashboardPath));
+    app.get('/', (req, res) => res.sendFile(path.join(dashboardPath, 'index.html')));
+}
+
 // WebSocket for real-time monitoring
 const wss = new WebSocket.Server({ server, path: '/ws' });
 setupWS(wss, JWT_SECRET);
