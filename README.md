@@ -125,8 +125,45 @@ myvps help               # Help
 
 ## Documentation
 
+- [**Hướng dẫn Cài đặt**](docs/SETUP.md) - Setup Agent, Dashboard, cấu hình, bảo mật
+- [**Hướng dẫn Dashboard UI**](docs/UI-GUIDE.md) - Sử dụng 23 trang Dashboard (có screenshot)
+- [**Hướng dẫn CLI**](docs/CLI-GUIDE.md) - 20 modules CLI chi tiết (có screenshot)
 - [Architecture](docs/ARCHITECTURE.md) - System design and API reference
 - [Web UI Plan](docs/WEB-UI-PLAN.md) - Roadmap and technical decisions
+
+### Screenshots
+
+**CLI Modules:**
+
+| Module | Screenshot |
+|--------|-----------|
+| Main Help | [Screenshot](docs/screenshots/cli/00-help.png) |
+| Domain | [Screenshot](docs/screenshots/cli/domain.png) |
+| Database | [Screenshot](docs/screenshots/cli/db.png) |
+| PHP | [Screenshot](docs/screenshots/cli/php.png) |
+| Nginx | [Screenshot](docs/screenshots/cli/nginx.png) |
+| SSL | [Screenshot](docs/screenshots/cli/ssl.png) |
+| SSH | [Screenshot](docs/screenshots/cli/ssh.png) |
+| Firewall | [Screenshot](docs/screenshots/cli/firewall.png) |
+| Cache | [Screenshot](docs/screenshots/cli/cache.png) |
+| Backup | [Screenshot](docs/screenshots/cli/backup.png) |
+| WordPress | [Screenshot](docs/screenshots/cli/wp.png) |
+| Monitor | [Screenshot](docs/screenshots/cli/monitor.png) |
+| Status | [Screenshot](docs/screenshots/cli/status.png) |
+
+**Dashboard UI:**
+
+| Page | Screenshot |
+|------|-----------|
+| Dashboard | [Screenshot](docs/screenshots/ui/dashboard.png) |
+| Domains | [Screenshot](docs/screenshots/ui/domains.png) |
+| File Manager | [Screenshot](docs/screenshots/ui/files.png) |
+| Terminal | [Screenshot](docs/screenshots/ui/terminal.png) |
+| App Store | [Screenshot](docs/screenshots/ui/appstore.png) |
+| SSH Keys | [Screenshot](docs/screenshots/ui/sshkeys.png) |
+| Cloud Backup | [Screenshot](docs/screenshots/ui/cloudbackup.png) |
+| Migration | [Screenshot](docs/screenshots/ui/migrate.png) |
+| Servers | [Screenshot](docs/screenshots/ui/servers.png) |
 
 ## License
 
