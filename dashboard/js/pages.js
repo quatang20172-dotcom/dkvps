@@ -1189,8 +1189,10 @@ pages.cloudbackup = async (el) => {
                 <input type="text" id="cb-name" placeholder="Destination name">
                 <select id="cb-type" onchange="cbTypeChange()">
                     <option value="s3">Amazon S3 / Wasabi</option>
+                    <option value="gdrive">Google Drive</option>
+                    <option value="pcloud">pCloud</option>
                     <option value="rsync">Remote Server (rsync)</option>
-                    <option value="rclone">Rclone (Google Drive, etc.)</option>
+                    <option value="rclone">Rclone (Other)</option>
                 </select>
             </div>
             <div id="cb-s3-fields">
@@ -1201,6 +1203,34 @@ pages.cloudbackup = async (el) => {
                 <div class="form-row mb-2">
                     <input type="text" id="cb-access-key" placeholder="Access Key" class="mono">
                     <input type="password" id="cb-secret-key" placeholder="Secret Key" class="mono">
+                </div>
+            </div>
+            <div id="cb-gdrive-fields" style="display:none">
+                <p class="text-muted text-sm mb-2">Run <code>rclone authorize "drive"</code> on a PC with browser, then paste the token below</p>
+                <div class="form-row mb-2">
+                    <input type="text" id="cb-gdrive-client-id" placeholder="Client ID (optional)">
+                    <input type="password" id="cb-gdrive-client-secret" placeholder="Client Secret (optional)">
+                </div>
+                <div class="form-row mb-2">
+                    <textarea id="cb-gdrive-token" placeholder='Paste rclone token JSON here...' rows="3" style="width:100%;font-family:monospace;font-size:12px"></textarea>
+                </div>
+                <div class="form-row mb-2">
+                    <input type="text" id="cb-gdrive-folder" placeholder="Folder ID (optional - leave blank for root)">
+                    <input type="text" id="cb-gdrive-path" placeholder="Backup path (e.g. /myvps-backup)" value="/myvps-backup">
+                </div>
+            </div>
+            <div id="cb-pcloud-fields" style="display:none">
+                <p class="text-muted text-sm mb-2">Run <code>rclone authorize "pcloud"</code> on a PC with browser, then paste the token below</p>
+                <div class="form-row mb-2">
+                    <input type="text" id="cb-pcloud-user" placeholder="pCloud username/email">
+                    <input type="password" id="cb-pcloud-pass" placeholder="pCloud password (or use token)">
+                </div>
+                <div class="form-row mb-2">
+                    <textarea id="cb-pcloud-token" placeholder='Paste rclone token JSON here...' rows="3" style="width:100%;font-family:monospace;font-size:12px"></textarea>
+                </div>
+                <div class="form-row mb-2">
+                    <select id="cb-pcloud-host"><option value="api.pcloud.com">pCloud (US)</option><option value="eapi.pcloud.com">pCloud (EU)</option></select>
+                    <input type="text" id="cb-pcloud-path" placeholder="Backup path (e.g. /myvps-backup)" value="/myvps-backup">
                 </div>
             </div>
             <div id="cb-rsync-fields" style="display:none">
@@ -1280,6 +1310,18 @@ pages.cloudbackup = async (el) => {
             body.region = document.getElementById('cb-region').value.trim();
             body.accessKey = document.getElementById('cb-access-key').value.trim();
             body.secretKey = document.getElementById('cb-secret-key').value;
+        } else if (type === 'gdrive') {
+            body.clientId = document.getElementById('cb-gdrive-client-id').value.trim();
+            body.clientSecret = document.getElementById('cb-gdrive-client-secret').value;
+            body.token = document.getElementById('cb-gdrive-token').value.trim();
+            body.folderId = document.getElementById('cb-gdrive-folder').value.trim();
+            body.path = document.getElementById('cb-gdrive-path').value.trim();
+        } else if (type === 'pcloud') {
+            body.username = document.getElementById('cb-pcloud-user').value.trim();
+            body.password = document.getElementById('cb-pcloud-pass').value;
+            body.token = document.getElementById('cb-pcloud-token').value.trim();
+            body.host = document.getElementById('cb-pcloud-host').value;
+            body.path = document.getElementById('cb-pcloud-path').value.trim();
         } else if (type === 'rsync') {
             body.host = document.getElementById('cb-host').value.trim();
             body.username = document.getElementById('cb-username').value.trim();
@@ -1295,6 +1337,8 @@ pages.cloudbackup = async (el) => {
 window.cbTypeChange = () => {
     const type = document.getElementById('cb-type').value;
     document.getElementById('cb-s3-fields').style.display = type === 's3' ? '' : 'none';
+    document.getElementById('cb-gdrive-fields').style.display = type === 'gdrive' ? '' : 'none';
+    document.getElementById('cb-pcloud-fields').style.display = type === 'pcloud' ? '' : 'none';
     document.getElementById('cb-rsync-fields').style.display = type === 'rsync' ? '' : 'none';
     document.getElementById('cb-rclone-fields').style.display = type === 'rclone' ? '' : 'none';
 };

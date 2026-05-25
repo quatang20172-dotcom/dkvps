@@ -1,6 +1,6 @@
 /**
  * Cloud Backup API routes
- * Backup to S3, Google Drive, remote server via rsync
+ * Backup to S3, Google Drive, pCloud, remote server via rsync
  */
 const express = require('express');
 const router = express.Router();
@@ -9,6 +9,7 @@ const path = require('path');
 const { run, runSafe } = require('../utils/exec');
 
 const CONFIG_FILE = '/etc/myvps/cloudbackup.json';
+const RCLONE_CONFIG = '/root/.config/rclone/rclone.conf';
 
 function loadConfig() {
     try { if (fs.existsSync(CONFIG_FILE)) return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch {}
@@ -20,24 +21,68 @@ function saveConfig(config) {
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
 }
 
+function writeRcloneRemote(remoteName, lines) {
+    const dir = path.dirname(RCLONE_CONFIG);
+    fs.mkdirSync(dir, { recursive: true });
+    let existing = '';
+    if (fs.existsSync(RCLONE_CONFIG)) existing = fs.readFileSync(RCLONE_CONFIG, 'utf8');
+    // Remove existing remote with same name
+    const sections = existing.split(/(?=^\[)/m).filter(s => s.trim());
+    const filtered = sections.filter(s => !s.startsWith(`[${remoteName}]`));
+    const newSection = `[${remoteName}]\n${lines.join('\n')}\n`;
+    fs.writeFileSync(RCLONE_CONFIG, [...filtered, newSection].join('\n'));
+}
+
 // List cloud backup destinations
 router.get('/destinations', (req, res) => {
     const config = loadConfig();
-    const safe = config.destinations.map(d => ({ ...d, secretKey: d.secretKey ? '***' : undefined, password: d.password ? '***' : undefined }));
+    const safe = config.destinations.map(d => ({
+        ...d,
+        secretKey: d.secretKey ? '***' : undefined,
+        password: d.password ? '***' : undefined,
+        clientSecret: d.clientSecret ? '***' : undefined,
+        token: d.token ? '***' : undefined,
+    }));
     res.json({ destinations: safe });
 });
 
 // Add backup destination
-router.post('/destinations', (req, res) => {
-    const { name, type, bucket, region, accessKey, secretKey, host, path: remotePath, username, password, sshKey } = req.body;
+router.post('/destinations', async (req, res) => {
+    const { name, type, bucket, region, accessKey, secretKey, host,
+        path: remotePath, username, password, sshKey,
+        clientId, clientSecret, token, folderId } = req.body;
     if (!name || !type) return res.status(400).json({ error: 'name and type required' });
+
     const config = loadConfig();
+    const remoteName = `myvps-${name.replace(/[^a-zA-Z0-9]/g, '-').toLowerCase()}`;
     const dest = {
-        id: Date.now().toString(), name, type,
+        id: Date.now().toString(), name, type, remoteName,
         bucket, region, accessKey, secretKey,
         host, path: remotePath, username, password, sshKey,
+        clientId, clientSecret, token, folderId,
         created: new Date().toISOString()
     };
+
+    // Auto-configure rclone for Google Drive and pCloud
+    if (type === 'gdrive') {
+        const lines = ['type = drive'];
+        if (clientId) lines.push(`client_id = ${clientId}`);
+        if (clientSecret) lines.push(`client_secret = ${clientSecret}`);
+        if (token) lines.push(`token = ${token}`);
+        if (folderId) lines.push(`root_folder_id = ${folderId}`);
+        lines.push('scope = drive');
+        writeRcloneRemote(remoteName, lines);
+        dest.rcloneRemote = remoteName;
+    } else if (type === 'pcloud') {
+        const lines = ['type = pcloud'];
+        if (username) lines.push(`username = ${username}`);
+        if (password) lines.push(`password = ${password}`);
+        if (token) lines.push(`token = ${token}`);
+        if (host) lines.push(`hostname = ${host}`);
+        writeRcloneRemote(remoteName, lines);
+        dest.rcloneRemote = remoteName;
+    }
+
     config.destinations.push(dest);
     saveConfig(config);
     res.json({ message: 'Destination added', id: dest.id });
@@ -46,9 +91,51 @@ router.post('/destinations', (req, res) => {
 // Delete backup destination
 router.delete('/destinations/:id', (req, res) => {
     const config = loadConfig();
+    const dest = config.destinations.find(d => d.id === req.params.id);
     config.destinations = config.destinations.filter(d => d.id !== req.params.id);
     saveConfig(config);
+    // Clean up rclone config
+    if (dest?.rcloneRemote && fs.existsSync(RCLONE_CONFIG)) {
+        try {
+            const existing = fs.readFileSync(RCLONE_CONFIG, 'utf8');
+            const sections = existing.split(/(?=^\[)/m).filter(s => s.trim());
+            const filtered = sections.filter(s => !s.startsWith(`[${dest.rcloneRemote}]`));
+            fs.writeFileSync(RCLONE_CONFIG, filtered.join('\n'));
+        } catch {}
+    }
     res.json({ message: 'Destination deleted' });
+});
+
+// Setup rclone interactively (for OAuth-based services)
+router.post('/rclone-setup', async (req, res) => {
+    const { type } = req.body;
+    try {
+        // Check if rclone is installed
+        const check = await runSafe('rclone --version 2>/dev/null');
+        if (!check.stdout) {
+            // Auto-install rclone
+            await run('curl https://rclone.org/install.sh | sudo bash 2>&1', 60000);
+        }
+        const ver = await runSafe('rclone --version 2>/dev/null');
+        res.json({
+            installed: !!ver.stdout,
+            version: (ver.stdout || '').split('\n')[0],
+            instructions: type === 'gdrive'
+                ? 'For Google Drive: 1) Run `rclone authorize "drive"` on a machine with a browser, 2) Copy the token JSON, 3) Paste it when adding destination'
+                : type === 'pcloud'
+                    ? 'For pCloud: 1) Run `rclone authorize "pcloud"` on a machine with a browser, 2) Copy the token JSON, 3) Paste it when adding destination'
+                    : 'Run `rclone config` to set up manually'
+        });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// List rclone remotes
+router.get('/rclone-remotes', async (req, res) => {
+    try {
+        const r = await runSafe('rclone listremotes 2>/dev/null');
+        const remotes = (r.stdout || '').split('\n').filter(Boolean).map(r => r.replace(/:$/, ''));
+        res.json({ remotes });
+    } catch { res.json({ remotes: [] }); }
 });
 
 // Run cloud backup
@@ -91,6 +178,11 @@ router.post('/run', async (req, res) => {
             const remote = `${dest.username || 'root'}@${dest.host}:${dest.path || '/backup'}/`;
             const r = await run(`rsync -avz ${keyFlag} "${localFile}" "${remote}" 2>&1`, 300000);
             uploadResult = r.stdout;
+        } else if (dest.type === 'gdrive' || dest.type === 'pcloud') {
+            const remote = dest.rcloneRemote || dest.remoteName;
+            const remotePath = dest.path || '/myvps-backup';
+            const r = await run(`rclone copy "${localFile}" "${remote}:${remotePath}" 2>&1`, 300000);
+            uploadResult = r.stdout;
         } else if (dest.type === 'rclone') {
             const r = await run(`rclone copy "${localFile}" "${dest.name}:${dest.path || '/backup'}" 2>&1`, 300000);
             uploadResult = r.stdout;
@@ -131,12 +223,16 @@ router.get('/tools', async (req, res) => {
     const aws = await runSafe('aws --version 2>/dev/null');
     const rclone = await runSafe('rclone --version 2>/dev/null');
     const rsync = await runSafe('rsync --version 2>/dev/null');
+    // Check rclone remotes
+    const remotes = await runSafe('rclone listremotes 2>/dev/null');
+    const remoteList = (remotes.stdout || '').split('\n').filter(Boolean).map(r => r.replace(/:$/, ''));
     res.json({
         aws: !!aws.stdout,
         rclone: !!rclone.stdout,
         rsync: !!rsync.stdout,
         awsVersion: (aws.stdout || '').split('\n')[0],
         rcloneVersion: (rclone.stdout || '').split('\n')[0],
+        rcloneRemotes: remoteList,
     });
 });
 
