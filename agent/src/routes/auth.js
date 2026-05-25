@@ -14,7 +14,7 @@ module.exports = function(JWT_SECRET, config) {
         const { api_key, password } = req.body;
 
         // Method 1: API key (for dashboard)
-        if (api_key && api_key === config.agent_api_key) {
+        if (api_key && (api_key === config.api_key || api_key === config.agent_api_key)) {
             const token = jwt.sign({ role: 'dashboard', iat: Date.now() }, JWT_SECRET, { expiresIn: '7d' });
             return res.json({ token, expires_in: '7d' });
         }

@@ -72,8 +72,8 @@ async function getServiceStatuses() {
     const svcs = ['nginx', 'php-fpm', 'mariadb', 'redis', 'memcached', 'fail2ban', 'sshd'];
     const results = {};
     await Promise.all(svcs.map(async s => {
-        const r = await runSafe(`systemctl is-active ${s} 2>/dev/null || echo inactive`);
-        results[s] = r.stdout;
+        const r = await runSafe(`systemctl is-active ${s} 2>/dev/null`);
+        results[s] = (r.stdout || 'inactive').trim();
     }));
     return results;
 }

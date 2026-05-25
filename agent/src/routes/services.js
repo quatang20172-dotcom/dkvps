@@ -7,8 +7,8 @@ const ALLOWED = ['nginx', 'php-fpm', 'mariadb', 'redis', 'memcached', 'fail2ban'
 router.get('/', async (req, res) => {
     const services = {};
     await Promise.all(ALLOWED.map(async s => {
-        const r = await runSafe(`systemctl is-active ${s} 2>/dev/null || echo inactive`);
-        services[s] = r.stdout;
+        const r = await runSafe(`systemctl is-active ${s} 2>/dev/null`);
+        services[s] = (r.stdout || 'inactive').trim();
     }));
     res.json({ services });
 });
@@ -20,8 +20,8 @@ router.post('/:name/:action', async (req, res) => {
 
     try {
         await run(`systemctl ${action} ${name} 2>/dev/null`);
-        const r = await runSafe(`systemctl is-active ${name} 2>/dev/null || echo inactive`);
-        res.json({ message: `${name} ${action}ed`, status: r.stdout });
+        const r = await runSafe(`systemctl is-active ${name} 2>/dev/null`);
+        res.json({ message: `${name} ${action}ed`, status: (r.stdout || 'inactive').trim() });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }

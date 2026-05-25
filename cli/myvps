@@ -11,7 +11,8 @@
 #   myvps --json status      - JSON output (for Web UI)
 #
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REAL_SCRIPT="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
 CLI_DIR="${SCRIPT_DIR}"
 
 # Source core
@@ -28,6 +29,57 @@ if [[ "$1" == "--json" ]]; then
     JSON_MODE=true
     shift
 fi
+
+# ============================================================
+# Helper Functions
+# ============================================================
+
+show_help() {
+    cat <<EOF
+MyVPS v${MYVPS_VERSION} - VPS Management Tool
+
+Usage: myvps [module] [action] [args...]
+
+Modules:
+  domain      Domain management (add, list, delete, suspend)
+  db          Database management (create, delete, import, export)
+  php         PHP management (version, config)
+  nginx       Nginx management (config, restart)
+  ssl         SSL certificate management
+  ssh         SSH/SFTP management
+  firewall    Firewall/port management
+  cache       Cache management (Redis, Memcached, OPcache)
+  swap        Swap management
+  backup      Backup & restore
+  wp          WordPress management
+  laravel     Laravel management
+  monitor     System monitoring
+  log         Log management
+  port        Port management
+  fail2ban    Fail2Ban management
+  admin       Admin panel management
+  cron        Crontab management
+  util        Utility tools
+  info        VPS information
+  update      Update MyVPS
+  status      System status
+
+Options:
+  --json      Output in JSON format (for Web UI)
+  -h, --help  Show this help
+  -v          Show version
+
+Examples:
+  myvps                       # Interactive menu
+  myvps domain add            # Add new domain
+  myvps domain list           # List all domains
+  myvps db create             # Create database
+  myvps ssl install           # Install SSL
+  myvps wp install            # Install WordPress
+  myvps status                # Show system status
+  myvps --json status         # JSON status (for API)
+EOF
+}
 
 # ============================================================
 # CLI Command Router
@@ -354,53 +406,6 @@ start_web_dashboard() {
     else
         print_warning "Web Dashboard not installed. Run: myvps update"
     fi
-}
-
-show_help() {
-    cat <<EOF
-MyVPS v${MYVPS_VERSION} - VPS Management Tool
-
-Usage: myvps [module] [action] [args...]
-
-Modules:
-  domain      Domain management (add, list, delete, suspend)
-  db          Database management (create, delete, import, export)
-  php         PHP management (version, config)
-  nginx       Nginx management (config, restart)
-  ssl         SSL certificate management
-  ssh         SSH/SFTP management
-  firewall    Firewall/port management
-  cache       Cache management (Redis, Memcached, OPcache)
-  swap        Swap management
-  backup      Backup & restore
-  wp          WordPress management
-  laravel     Laravel management
-  monitor     System monitoring
-  log         Log management
-  port        Port management
-  fail2ban    Fail2Ban management
-  admin       Admin panel management
-  cron        Crontab management
-  util        Utility tools
-  info        VPS information
-  update      Update MyVPS
-  status      System status
-
-Options:
-  --json      Output in JSON format (for Web UI)
-  -h, --help  Show this help
-  -v          Show version
-
-Examples:
-  myvps                       # Interactive menu
-  myvps domain add            # Add new domain
-  myvps domain list           # List all domains
-  myvps db create             # Create database
-  myvps ssl install           # Install SSL
-  myvps wp install            # Install WordPress
-  myvps status                # Show system status
-  myvps --json status         # JSON status (for API)
-EOF
 }
 
 # Run

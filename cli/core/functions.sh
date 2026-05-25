@@ -73,7 +73,9 @@ human_readable() {
 
 service_status() {
     local service="$1"
-    systemctl is-active "$service" 2>/dev/null || echo "inactive"
+    local st
+    st=$(systemctl is-active "$service" 2>/dev/null) || true
+    echo "${st:-inactive}"
 }
 
 service_restart() {
