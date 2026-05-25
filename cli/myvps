@@ -1,0 +1,407 @@
+#!/bin/bash
+#
+# MyVPS - VPS Management Tool
+# Main entry point
+#
+# Usage: myvps [module] [action] [args...]
+#   myvps                    - Interactive menu
+#   myvps domain add         - Add domain
+#   myvps domain list        - List domains
+#   myvps status             - Show status
+#   myvps --json status      - JSON output (for Web UI)
+#
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLI_DIR="${SCRIPT_DIR}"
+
+# Source core
+source "${CLI_DIR}/core/config.sh"
+source "${CLI_DIR}/core/colors.sh"
+source "${CLI_DIR}/core/functions.sh"
+
+# Load config
+load_config
+
+# Check JSON mode
+JSON_MODE=false
+if [[ "$1" == "--json" ]]; then
+    JSON_MODE=true
+    shift
+fi
+
+# ============================================================
+# CLI Command Router
+# ============================================================
+
+if [[ -n "$1" ]]; then
+    MODULE="$1"
+    ACTION="${2:-}"
+    shift
+    [[ -n "$ACTION" ]] && shift
+
+    case "$MODULE" in
+        domain)
+            source "${CLI_DIR}/modules/domain/domain.sh"
+            domain_handler "$ACTION" "$@"
+            ;;
+        db|database)
+            source "${CLI_DIR}/modules/database/database.sh"
+            database_handler "$ACTION" "$@"
+            ;;
+        php)
+            source "${CLI_DIR}/modules/php/php.sh"
+            php_handler "$ACTION" "$@"
+            ;;
+        nginx)
+            source "${CLI_DIR}/modules/nginx/nginx.sh"
+            nginx_handler "$ACTION" "$@"
+            ;;
+        ssl)
+            source "${CLI_DIR}/modules/ssl/ssl.sh"
+            ssl_handler "$ACTION" "$@"
+            ;;
+        ssh)
+            source "${CLI_DIR}/modules/ssh/ssh.sh"
+            ssh_handler "$ACTION" "$@"
+            ;;
+        firewall|fw)
+            source "${CLI_DIR}/modules/firewall/firewall.sh"
+            firewall_handler "$ACTION" "$@"
+            ;;
+        cache)
+            source "${CLI_DIR}/modules/cache/cache.sh"
+            cache_handler "$ACTION" "$@"
+            ;;
+        swap)
+            source "${CLI_DIR}/modules/swap/swap.sh"
+            swap_handler "$ACTION" "$@"
+            ;;
+        backup)
+            source "${CLI_DIR}/modules/backup/backup.sh"
+            backup_handler "$ACTION" "$@"
+            ;;
+        wp|wordpress)
+            source "${CLI_DIR}/modules/wordpress/wordpress.sh"
+            wordpress_handler "$ACTION" "$@"
+            ;;
+        laravel)
+            source "${CLI_DIR}/modules/laravel/laravel.sh"
+            laravel_handler "$ACTION" "$@"
+            ;;
+        monitor|status)
+            source "${CLI_DIR}/modules/monitor/monitor.sh"
+            if [[ "$JSON_MODE" == true ]]; then
+                json_status
+            else
+                show_status
+            fi
+            ;;
+        log)
+            source "${CLI_DIR}/modules/log/log.sh"
+            log_handler "$ACTION" "$@"
+            ;;
+        port)
+            source "${CLI_DIR}/modules/port/port.sh"
+            port_handler "$ACTION" "$@"
+            ;;
+        fail2ban|f2b)
+            source "${CLI_DIR}/modules/fail2ban/fail2ban.sh"
+            fail2ban_handler "$ACTION" "$@"
+            ;;
+        admin)
+            source "${CLI_DIR}/modules/app_admin/app_admin.sh"
+            app_admin_handler "$ACTION" "$@"
+            ;;
+        crontab|cron)
+            source "${CLI_DIR}/modules/crontab/crontab.sh"
+            crontab_handler "$ACTION" "$@"
+            ;;
+        utility|util)
+            source "${CLI_DIR}/modules/utility/utility.sh"
+            utility_handler "$ACTION" "$@"
+            ;;
+        info)
+            source "${CLI_DIR}/modules/monitor/monitor.sh"
+            show_info
+            ;;
+        update)
+            source "${CLI_DIR}/modules/monitor/monitor.sh"
+            update_myvps
+            ;;
+        help|-h|--help)
+            show_help
+            ;;
+        version|-v|--version)
+            echo "MyVPS v${MYVPS_VERSION}"
+            ;;
+        *)
+            print_error "Unknown module: $MODULE"
+            show_help
+            ;;
+    esac
+    exit 0
+fi
+
+# ============================================================
+# Interactive Menu
+# ============================================================
+
+show_main_menu() {
+    require_root
+
+    clear
+    source "${CLI_DIR}/modules/monitor/monitor.sh"
+    show_status_bar
+
+    echo ""
+    print_header "MyVPS v${MYVPS_VERSION} - VPS Management Tool"
+    echo ""
+
+    local options=(
+        "Domain Management"
+        "SSL Management (Let's Encrypt / ZeroSSL)"
+        "SSH/SFTP Management"
+        "Admin Panel Management"
+        "Database Management"
+        "PHP Management"
+        "Nginx Management"
+        "Fail2Ban Management"
+        "Application Install (WordPress/Laravel)"
+        "Service Management (Start/Stop/Restart)"
+        "Utility Tools"
+        "Crontab Management"
+        "Cache Management (Redis/Memcached/OPcache)"
+        "Swap Management"
+        "Port/Firewall Management"
+        "Disk Management"
+        "Log Management"
+        "WordPress Management"
+        "Backup & Restore"
+        "VPS Information"
+        "System Monitoring"
+        "Update MyVPS"
+        "Web Dashboard"
+    )
+
+    PS3=$'\n'"Select option (1-${#options[@]}) [Ctrl+C=Exit]: "
+    select opt in "${options[@]}"; do
+        case $opt in
+            "${options[0]}")
+                source "${CLI_DIR}/modules/domain/domain.sh"
+                domain_menu
+                ;;
+            "${options[1]}")
+                source "${CLI_DIR}/modules/ssl/ssl.sh"
+                ssl_menu
+                ;;
+            "${options[2]}")
+                source "${CLI_DIR}/modules/ssh/ssh.sh"
+                ssh_menu
+                ;;
+            "${options[3]}")
+                source "${CLI_DIR}/modules/app_admin/app_admin.sh"
+                app_admin_menu
+                ;;
+            "${options[4]}")
+                source "${CLI_DIR}/modules/database/database.sh"
+                database_menu
+                ;;
+            "${options[5]}")
+                source "${CLI_DIR}/modules/php/php.sh"
+                php_menu
+                ;;
+            "${options[6]}")
+                source "${CLI_DIR}/modules/nginx/nginx.sh"
+                nginx_menu
+                ;;
+            "${options[7]}")
+                source "${CLI_DIR}/modules/fail2ban/fail2ban.sh"
+                fail2ban_menu
+                ;;
+            "${options[8]}")
+                application_menu
+                ;;
+            "${options[9]}")
+                service_management_menu
+                ;;
+            "${options[10]}")
+                source "${CLI_DIR}/modules/utility/utility.sh"
+                utility_menu
+                ;;
+            "${options[11]}")
+                source "${CLI_DIR}/modules/crontab/crontab.sh"
+                crontab_menu
+                ;;
+            "${options[12]}")
+                source "${CLI_DIR}/modules/cache/cache.sh"
+                cache_menu
+                ;;
+            "${options[13]}")
+                source "${CLI_DIR}/modules/swap/swap.sh"
+                swap_menu
+                ;;
+            "${options[14]}")
+                source "${CLI_DIR}/modules/port/port.sh"
+                port_menu
+                ;;
+            "${options[15]}")
+                source "${CLI_DIR}/modules/monitor/monitor.sh"
+                disk_menu
+                ;;
+            "${options[16]}")
+                source "${CLI_DIR}/modules/log/log.sh"
+                log_menu
+                ;;
+            "${options[17]}")
+                source "${CLI_DIR}/modules/wordpress/wordpress.sh"
+                wordpress_menu
+                ;;
+            "${options[18]}")
+                source "${CLI_DIR}/modules/backup/backup.sh"
+                backup_menu
+                ;;
+            "${options[19]}")
+                source "${CLI_DIR}/modules/monitor/monitor.sh"
+                show_info
+                ;;
+            "${options[20]}")
+                source "${CLI_DIR}/modules/monitor/monitor.sh"
+                show_monitoring
+                ;;
+            "${options[21]}")
+                source "${CLI_DIR}/modules/monitor/monitor.sh"
+                update_myvps
+                ;;
+            "${options[22]}")
+                start_web_dashboard
+                ;;
+            *) exit 0 ;;
+        esac
+        show_main_menu
+    done
+}
+
+# Application installer submenu
+application_menu() {
+    echo ""
+    print_subheader "Application Install"
+    echo ""
+    local options=("Install WordPress" "Install Laravel")
+    PS3=$'\n'"Select (1-${#options[@]}) [0=Back]: "
+    select opt in "${options[@]}"; do
+        case $opt in
+            "${options[0]}")
+                source "${CLI_DIR}/modules/wordpress/wordpress.sh"
+                wordpress_install
+                ;;
+            "${options[1]}")
+                source "${CLI_DIR}/modules/laravel/laravel.sh"
+                laravel_install
+                ;;
+            *) return ;;
+        esac
+    done
+}
+
+# Service management submenu
+service_management_menu() {
+    echo ""
+    print_subheader "Service Management"
+    echo ""
+    echo "Nginx:     $(service_status nginx)"
+    echo "PHP-FPM:   $(service_status php-fpm)"
+    echo "MariaDB:   $(service_status mariadb)"
+    echo "Redis:     $(service_status redis)"
+    echo "Memcached: $(service_status memcached)"
+    echo ""
+    local options=(
+        "Start All" "Stop All" "Restart All"
+        "Start Nginx" "Stop Nginx" "Restart Nginx"
+        "Start PHP-FPM" "Stop PHP-FPM" "Restart PHP-FPM"
+        "Start MariaDB" "Stop MariaDB" "Restart MariaDB"
+    )
+    PS3=$'\n'"Select (1-${#options[@]}) [0=Back]: "
+    select opt in "${options[@]}"; do
+        case $opt in
+            "Start All")   for s in nginx php-fpm mariadb redis memcached; do service_start $s; done ;;
+            "Stop All")    for s in nginx php-fpm mariadb redis memcached; do service_stop $s; done ;;
+            "Restart All") for s in nginx php-fpm mariadb redis memcached; do service_restart $s; done ;;
+            "Start Nginx")    service_start nginx ;;
+            "Stop Nginx")     service_stop nginx ;;
+            "Restart Nginx")  service_restart nginx ;;
+            "Start PHP-FPM")  service_start php-fpm ;;
+            "Stop PHP-FPM")   service_stop php-fpm ;;
+            "Restart PHP-FPM") service_restart php-fpm ;;
+            "Start MariaDB")  service_start mariadb ;;
+            "Stop MariaDB")   service_stop mariadb ;;
+            "Restart MariaDB") service_restart mariadb ;;
+            *) return ;;
+        esac
+    done
+}
+
+# Start web dashboard
+start_web_dashboard() {
+    load_config
+    echo ""
+    print_info "Web Dashboard: http://${ip:-localhost}:${port_admin:-8080}"
+    echo ""
+    if [[ -f "${CLI_DIR}/../web/backend/server.js" ]]; then
+        print_info "Starting Web Dashboard..."
+        cd "${CLI_DIR}/../web/backend"
+        node server.js &
+        print_success "Web Dashboard started on port ${port_admin:-8080}"
+    else
+        print_warning "Web Dashboard not installed. Run: myvps update"
+    fi
+}
+
+show_help() {
+    cat <<EOF
+MyVPS v${MYVPS_VERSION} - VPS Management Tool
+
+Usage: myvps [module] [action] [args...]
+
+Modules:
+  domain      Domain management (add, list, delete, suspend)
+  db          Database management (create, delete, import, export)
+  php         PHP management (version, config)
+  nginx       Nginx management (config, restart)
+  ssl         SSL certificate management
+  ssh         SSH/SFTP management
+  firewall    Firewall/port management
+  cache       Cache management (Redis, Memcached, OPcache)
+  swap        Swap management
+  backup      Backup & restore
+  wp          WordPress management
+  laravel     Laravel management
+  monitor     System monitoring
+  log         Log management
+  port        Port management
+  fail2ban    Fail2Ban management
+  admin       Admin panel management
+  cron        Crontab management
+  util        Utility tools
+  info        VPS information
+  update      Update MyVPS
+  status      System status
+
+Options:
+  --json      Output in JSON format (for Web UI)
+  -h, --help  Show this help
+  -v          Show version
+
+Examples:
+  myvps                       # Interactive menu
+  myvps domain add            # Add new domain
+  myvps domain list           # List all domains
+  myvps db create             # Create database
+  myvps ssl install           # Install SSL
+  myvps wp install            # Install WordPress
+  myvps status                # Show system status
+  myvps --json status         # JSON status (for API)
+EOF
+}
+
+# Run
+show_main_menu
