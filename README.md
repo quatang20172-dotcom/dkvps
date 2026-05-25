@@ -74,27 +74,39 @@ Auto-setup script for LEMP stack:
 
 ## Quick Start
 
-### Install on VPS
+### Cài đặt 1 lệnh
 ```bash
-curl -sO https://your-domain/install && bash install
+bash <(curl -sL https://raw.githubusercontent.com/quatang20172-dotcom/dkvps/main/install.sh)
 ```
 
-### Run Agent on VPS
-```bash
-cd /path/to/myvps/agent
-npm install
-npm start
-# Agent runs on port 9090
+Script sẽ tự động:
+- Cài LEMP stack (Nginx + PHP 8.1 + MariaDB + Redis + Memcached)
+- Cài Node.js + Agent API server
+- Sinh API key tự động
+- Khởi động Agent service (systemd)
+- Mở firewall port
+- Hiển thị **URL + API Key** để kết nối Dashboard
+
+### Kết nối Dashboard
+```
+1. Mở trình duyệt: http://YOUR_VPS_IP:9090
+2. Nhập API Key (hiển thị sau khi cài xong)
+3. Click Connect → Dashboard hiện ra
 ```
 
-### Access Dashboard
-```bash
-# Option 1: Built into Agent - just open browser
-open http://your-vps:9090
+### Thêm server vào Dashboard
+```
+1. Cài MyVPS lên server mới (chạy lệnh cài đặt ở trên)
+2. Trong Dashboard, vào trang "Servers" (sidebar)
+3. Click "+ Add Server"
+4. Nhập URL: http://IP_SERVER_MOI:9090
+5. Nhập API Key của server đó
+6. Click Add → Server xuất hiện, click để chuyển đổi
+```
 
-# Option 2: Standalone - just open the HTML file
-open dashboard/index.html
-# No npm install, no build, nothing to install
+### Xem lại thông tin kết nối
+```bash
+cat /etc/myvps/.info.conf
 ```
 
 ### CLI Usage

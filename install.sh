@@ -3,7 +3,7 @@
 # MyVPS - VPS Management Tool Installer
 # Supports: AlmaLinux 8/9, RockyLinux 8/9, Ubuntu 20.04/22.04
 #
-# Usage: curl -sO https://yourdomain.com/install.sh && bash install.sh
+# Usage: bash <(curl -sL https://raw.githubusercontent.com/quatang20172-dotcom/dkvps/main/install.sh)
 #
 
 set -e
@@ -63,14 +63,20 @@ esac
 read -p "Change SSH port? Enter new port or press Enter to keep 22: " PORT_SSH
 PORT_SSH=${PORT_SSH:-22}
 
+read -p "Agent port for Dashboard UI? Enter port or press Enter to keep 9090: " PORT_AGENT
+PORT_AGENT=${PORT_AGENT:-9090}
+
 PORT_ADMIN=8080
 DB_ROOT_PASSWORD=$(openssl rand -base64 48 | tr -dc 'a-zA-Z0-9' | head -c 32)
 ADMIN_PASSWORD=$(openssl rand -base64 48 | tr -dc 'a-zA-Z0-9' | head -c 24)
+AGENT_API_KEY=$(openssl rand -base64 48 | tr -dc 'a-zA-Z0-9' | head -c 48)
+AGENT_JWT_SECRET=$(openssl rand -hex 32)
 IP=$(curl -s https://api.ipify.org 2>/dev/null || curl -s https://ifconfig.me)
 
 echo ""
 echo -e "${YELLOW}[INFO]${NC} SSH Port: $PORT_SSH"
 echo -e "${YELLOW}[INFO]${NC} Admin Port: $PORT_ADMIN"
+echo -e "${YELLOW}[INFO]${NC} Agent Port: $PORT_AGENT"
 echo -e "${YELLOW}[INFO]${NC} IP: $IP"
 echo ""
 echo -e "${YELLOW}[INFO]${NC} Starting installation... This may take 5-10 minutes."
@@ -80,7 +86,7 @@ sleep 2
 # System Setup
 # ============================================================
 
-echo -e "${CYAN}[1/12]${NC} Setting timezone & updating system..."
+echo -e "${CYAN}[1/14]${NC} Setting timezone & updating system..."
 timedatectl set-timezone Asia/Ho_Chi_Minh
 export LC_ALL=en_US.UTF-8
 export LANG=en_US.UTF-8
@@ -101,12 +107,13 @@ fi
 # Firewall
 # ============================================================
 
-echo -e "${CYAN}[2/12]${NC} Configuring firewall..."
+echo -e "${CYAN}[2/14]${NC} Configuring firewall..."
 if [[ "$PKG_MANAGER" == "dnf" ]]; then
     systemctl start firewalld 2>/dev/null
     systemctl enable firewalld 2>/dev/null
     firewall-cmd --permanent --zone=public --add-service=http --add-service=https 2>/dev/null
     firewall-cmd --permanent --zone=public --add-port=$PORT_ADMIN/tcp 2>/dev/null
+    firewall-cmd --permanent --zone=public --add-port=$PORT_AGENT/tcp 2>/dev/null
     if [[ "$PORT_SSH" != "22" ]]; then
         firewall-cmd --permanent --zone=public --add-port=$PORT_SSH/tcp 2>/dev/null
     fi
@@ -117,6 +124,7 @@ elif [[ "$PKG_MANAGER" == "apt-get" ]]; then
     ufw allow 80/tcp 2>/dev/null
     ufw allow 443/tcp 2>/dev/null
     ufw allow $PORT_ADMIN/tcp 2>/dev/null
+    ufw allow $PORT_AGENT/tcp 2>/dev/null
     echo "y" | ufw enable 2>/dev/null
 fi
 
@@ -133,7 +141,7 @@ fi
 # Fail2Ban
 # ============================================================
 
-echo -e "${CYAN}[3/12]${NC} Installing Fail2Ban..."
+echo -e "${CYAN}[3/14]${NC} Installing Fail2Ban..."
 if [[ "$PKG_MANAGER" == "dnf" ]]; then
     dnf install -y fail2ban fail2ban-systemd 2>/dev/null
 else
@@ -156,7 +164,7 @@ systemctl start fail2ban 2>/dev/null
 # Nginx
 # ============================================================
 
-echo -e "${CYAN}[4/12]${NC} Installing Nginx..."
+echo -e "${CYAN}[4/14]${NC} Installing Nginx..."
 if [[ "$PKG_MANAGER" == "dnf" ]]; then
     cat > "/etc/yum.repos.d/nginx.repo" <<EOF
 [nginx-stable]
@@ -179,7 +187,7 @@ systemctl start nginx
 # PHP
 # ============================================================
 
-echo -e "${CYAN}[5/12]${NC} Installing PHP 8.1..."
+echo -e "${CYAN}[5/14]${NC} Installing PHP 8.1..."
 if [[ "$PKG_MANAGER" == "dnf" ]]; then
     dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-${OS_VERSION%%.*}.noarch.rpm 2>/dev/null
     dnf install -y yum-utils http://rpms.remirepo.net/enterprise/remi-release-${OS_VERSION%%.*}.rpm 2>/dev/null
@@ -207,7 +215,7 @@ systemctl start php-fpm 2>/dev/null || systemctl start php8.1-fpm 2>/dev/null
 # MariaDB
 # ============================================================
 
-echo -e "${CYAN}[6/12]${NC} Installing MariaDB..."
+echo -e "${CYAN}[6/14]${NC} Installing MariaDB..."
 if [[ "$PKG_MANAGER" == "dnf" ]]; then
     cat > /etc/yum.repos.d/mariadb.repo <<EOF
 [mariadb]
@@ -239,7 +247,7 @@ EOF
 # Cache (Memcached + Redis)
 # ============================================================
 
-echo -e "${CYAN}[7/12]${NC} Installing Redis & Memcached..."
+echo -e "${CYAN}[7/14]${NC} Installing Redis & Memcached..."
 if [[ "$PKG_MANAGER" == "dnf" ]]; then
     dnf -y install memcached redis 2>/dev/null
 else
@@ -255,7 +263,7 @@ systemctl start memcached 2>/dev/null
 # MyVPS Directory Structure
 # ============================================================
 
-echo -e "${CYAN}[8/12]${NC} Setting up MyVPS..."
+echo -e "${CYAN}[8/14]${NC} Setting up MyVPS..."
 mkdir -p /etc/myvps/{user,cron/{backup,alert},nginx,ssl,backup/{db,source},menu}
 mkdir -p /usr/share/nginx/myvps/{passwd,backup/{db,source}}
 mkdir -p /var/log/myvps
@@ -284,7 +292,7 @@ fi
 # Nginx Configuration
 # ============================================================
 
-echo -e "${CYAN}[9/12]${NC} Configuring Nginx..."
+echo -e "${CYAN}[9/14]${NC} Configuring Nginx..."
 PROCESS=$(grep -c ^processor /proc/cpuinfo)
 MAX_CLIENT=$((1024 * PROCESS * 2))
 
@@ -417,7 +425,7 @@ htpasswd -bc /usr/share/nginx/myvps/passwd/.htpasswd admin "$ADMIN_PASSWORD" 2>/
 # phpMyAdmin
 # ============================================================
 
-echo -e "${CYAN}[10/12]${NC} Installing phpMyAdmin..."
+echo -e "${CYAN}[10/14]${NC} Installing phpMyAdmin..."
 PMA_VERSION="5.2.1"
 cd /usr/share/nginx/myvps
 wget -q "https://files.phpmyadmin.net/phpMyAdmin/$PMA_VERSION/phpMyAdmin-$PMA_VERSION-all-languages.zip"
@@ -436,13 +444,25 @@ chown -R nginx:nginx /usr/share/nginx/myvps 2>/dev/null
 # Install MyVPS CLI
 # ============================================================
 
-echo -e "${CYAN}[11/12]${NC} Installing MyVPS CLI..."
+echo -e "${CYAN}[11/14]${NC} Installing MyVPS CLI..."
+
+# Clone repo from GitHub if not already present
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MYVPS_DIR="/root/myvps"
+
+if [[ ! -d "$MYVPS_DIR/cli" ]]; then
+    if [[ -d "$SCRIPT_DIR/cli" ]]; then
+        MYVPS_DIR="$SCRIPT_DIR"
+    else
+        echo -e "${YELLOW}[INFO]${NC} Cloning MyVPS from GitHub..."
+        git clone https://github.com/quatang20172-dotcom/dkvps.git "$MYVPS_DIR" 2>/dev/null
+    fi
+fi
 
 # Copy CLI scripts
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -d "$SCRIPT_DIR/cli" ]]; then
-    cp -r "$SCRIPT_DIR/cli/"* /etc/myvps/menu/
-    cp "$SCRIPT_DIR/cli/myvps" /usr/bin/myvps
+if [[ -d "$MYVPS_DIR/cli" ]]; then
+    cp -r "$MYVPS_DIR/cli/"* /etc/myvps/menu/
+    cp "$MYVPS_DIR/cli/myvps" /usr/bin/myvps
     chmod +x /usr/bin/myvps
     find /etc/myvps/menu -type f -exec chmod +x {} \;
 fi
@@ -459,16 +479,77 @@ curl -s https://rclone.org/install.sh | bash 2>/dev/null
 # Save Configuration
 # ============================================================
 
-echo -e "${CYAN}[12/12]${NC} Saving configuration..."
+# ============================================================
+# Node.js + Agent
+# ============================================================
+
+echo -e "${CYAN}[12/14]${NC} Installing Node.js & Agent..."
+
+# Install Node.js 20.x if not present
+if ! command -v node &>/dev/null; then
+    if [[ "$PKG_MANAGER" == "apt-get" ]]; then
+        curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+        apt-get install -y nodejs
+    else
+        curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+        dnf install -y nodejs
+    fi
+fi
+
+NODE_VER=$(node -v 2>/dev/null || echo "not found")
+echo -e "${GREEN}[OK]${NC} Node.js: $NODE_VER"
+
+# Install Agent dependencies
+if [[ -d "$MYVPS_DIR/agent" ]]; then
+    cd "$MYVPS_DIR/agent"
+    npm install --production 2>/dev/null
+    echo -e "${GREEN}[OK]${NC} Agent dependencies installed"
+fi
+
+echo -e "${CYAN}[13/14]${NC} Setting up Agent service..."
+
+# Create systemd service for Agent
+cat > /etc/systemd/system/myvps-agent.service <<EOF
+[Unit]
+Description=MyVPS Agent - Dashboard API Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=$MYVPS_DIR/agent
+ExecStart=$(which node) server.js
+Restart=always
+RestartSec=5
+Environment=AGENT_PORT=$PORT_AGENT
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable myvps-agent 2>/dev/null
+systemctl start myvps-agent 2>/dev/null
+
+echo -e "${GREEN}[OK]${NC} Agent running on port $PORT_AGENT"
+
+# ============================================================
+# Save Configuration
+# ============================================================
+
+echo -e "${CYAN}[14/14]${NC} Saving configuration..."
 
 cat > "/etc/myvps/.myvps.conf" <<EOF
 ip=$IP
 version=$MYVPS_VERSION
 port_ssh=$PORT_SSH
 port_admin=$PORT_ADMIN
+port_agent=$PORT_AGENT
 db_admin_user=admin
 db_admin_password=$DB_ROOT_PASSWORD
 admin_password=$ADMIN_PASSWORD
+agent_api_key=$AGENT_API_KEY
+agent_secret=$AGENT_JWT_SECRET
 timezone=Asia/Ho_Chi_Minh
 php_default_version=8.1
 EOF
@@ -522,25 +603,52 @@ systemctl restart nginx php8.1-fpm mariadb 2>/dev/null
 # Done!
 # ============================================================
 
+# Restart Agent with new config
+systemctl restart myvps-agent 2>/dev/null
+
 clear
 echo -e "${CYAN}=========================================================================${NC}"
 echo -e "${GREEN}${BOLD}              MyVPS v${MYVPS_VERSION} - Installation Complete!${NC}"
 echo -e "${CYAN}=========================================================================${NC}"
 echo ""
-echo -e "  1. SSH:              ${WHITE}ssh -p $PORT_SSH root@$IP${NC}"
-echo -e "  2. IP:               ${WHITE}$IP${NC}"
-echo -e "  3. Version:          ${WHITE}$MYVPS_VERSION${NC}"
-echo -e "  4. SSH Port:         ${WHITE}$PORT_SSH${NC}"
-echo -e "  5. phpMyAdmin:       ${WHITE}http://$IP:$PORT_ADMIN/phpmyadmin${NC}"
-echo -e "  6. DB Admin User:    ${WHITE}admin${NC}"
-echo -e "  7. DB Admin Pass:    ${WHITE}$DB_ROOT_PASSWORD${NC}"
-echo -e "  8. Admin Login:      ${WHITE}admin${NC}"
-echo -e "  9. Admin Password:   ${WHITE}$ADMIN_PASSWORD${NC}"
+echo -e "  ${BOLD}SERVER INFO${NC}"
+echo -e "  IP:                  ${WHITE}$IP${NC}"
+echo -e "  SSH:                 ${WHITE}ssh -p $PORT_SSH root@$IP${NC}"
+echo -e "  SSH Port:            ${WHITE}$PORT_SSH${NC}"
+echo -e "  Version:             ${WHITE}$MYVPS_VERSION${NC}"
+echo ""
+echo -e "  ${BOLD}DATABASE${NC}"
+echo -e "  phpMyAdmin:          ${WHITE}http://$IP:$PORT_ADMIN/phpmyadmin${NC}"
+echo -e "  DB Admin User:       ${WHITE}admin${NC}"
+echo -e "  DB Admin Pass:       ${WHITE}$DB_ROOT_PASSWORD${NC}"
+echo -e "  Admin Login:         ${WHITE}admin${NC}"
+echo -e "  Admin Password:      ${WHITE}$ADMIN_PASSWORD${NC}"
 echo ""
 echo -e "${CYAN}------------------------------------------------------------------------${NC}"
-echo -e "  Run ${WHITE}myvps${NC} to open management menu."
-echo -e "  Documentation: ${WHITE}https://yourdomain.com/docs${NC}"
+echo -e "  ${BOLD}${GREEN}DASHBOARD UI (Web Panel)${NC}"
 echo -e "${CYAN}------------------------------------------------------------------------${NC}"
+echo -e "  ${BOLD}URL:${NC}               ${WHITE}http://$IP:$PORT_AGENT${NC}"
+echo -e "  ${BOLD}API Key:${NC}           ${WHITE}$AGENT_API_KEY${NC}"
+echo ""
+echo -e "  ${YELLOW}Cách kết nối Dashboard:${NC}"
+echo -e "    1. Mở trình duyệt: ${WHITE}http://$IP:$PORT_AGENT${NC}"
+echo -e "    2. Nhập API Key ở trên"
+echo -e "    3. Click ${WHITE}Connect${NC}"
+echo ""
+echo -e "  ${YELLOW}Thêm server vào Dashboard:${NC}"
+echo -e "    1. Trong Dashboard, vào trang ${WHITE}Servers${NC} (sidebar)"
+echo -e "    2. Click ${WHITE}+ Add Server${NC}"
+echo -e "    3. Nhập URL: ${WHITE}http://IP_SERVER:$PORT_AGENT${NC}"
+echo -e "    4. Nhập API Key của server đó"
+echo -e "    5. Click ${WHITE}Add${NC} → Server xuất hiện trong danh sách"
+echo -e "    6. Click vào server card để chuyển đổi quản lý"
+echo ""
+echo -e "${CYAN}------------------------------------------------------------------------${NC}"
+echo -e "  ${WHITE}CLI:${NC} Gõ ${WHITE}myvps${NC} để mở menu quản lý."
+echo -e "  ${WHITE}Docs:${NC} https://github.com/quatang20172-dotcom/dkvps/tree/main/docs"
+echo -e "${CYAN}------------------------------------------------------------------------${NC}"
+echo ""
+echo -e "  ${RED}${BOLD}LƯU Ý: Hãy lưu lại thông tin trên! Xem lại: cat /etc/myvps/.info.conf${NC}"
 echo ""
 
 # Save install info
@@ -548,14 +656,23 @@ cat > "/etc/myvps/.info.conf" <<EOF
 ========================================================================
 MyVPS v${MYVPS_VERSION} - Installation Info
 ========================================================================
-SSH:              ssh -p $PORT_SSH root@$IP
 IP:               $IP
+SSH:              ssh -p $PORT_SSH root@$IP
 SSH Port:         $PORT_SSH
 phpMyAdmin:       http://$IP:$PORT_ADMIN/phpmyadmin
 DB Admin User:    admin
 DB Admin Pass:    $DB_ROOT_PASSWORD
 Admin Login:      admin
 Admin Password:   $ADMIN_PASSWORD
+------------------------------------------------------------------------
+DASHBOARD UI
+------------------------------------------------------------------------
+URL:              http://$IP:$PORT_AGENT
+API Key:          $AGENT_API_KEY
+------------------------------------------------------------------------
+Thêm server: Dashboard > Servers > + Add Server
+  - URL: http://IP_SERVER:$PORT_AGENT
+  - API Key: (API key của server đó)
 ------------------------------------------------------------------------
 EOF
 chmod 600 /etc/myvps/.info.conf

@@ -7,74 +7,97 @@
 - **Node.js**: v16+ (cho Agent)
 - **Quyền**: root
 
-## Bước 1: Cài đặt LEMP Stack + CLI
+## Cài nhanh 1 lệnh (Khuyến nghị)
 
 ```bash
-# Tải và chạy installer
+bash <(curl -sL https://raw.githubusercontent.com/quatang20172-dotcom/dkvps/main/install.sh)
+```
+
+Script hỏi **2 câu** rồi tự động cài tất cả:
+
+| Câu hỏi | Mặc định | Mô tả |
+|----------|----------|-------|
+| SSH port? | 22 | Port SSH (Enter để giữ 22) |
+| Agent port? | 9090 | Port Dashboard UI (Enter để giữ 9090) |
+
+**Tự động cài:**
+- LEMP stack (Nginx + PHP 8.1 + MariaDB + Redis + Memcached)
+- Fail2Ban, phpMyAdmin, WP-CLI, rclone, acme.sh
+- Node.js 20.x + Agent (npm install)
+- Tạo systemd service `myvps-agent`
+- **Sinh API key tự động** (48 ký tự ngẫu nhiên)
+- Mở firewall ports (80, 443, SSH, Admin, Agent)
+- CLI tool `myvps` tại `/usr/bin/myvps`
+
+**Sau khi cài xong, màn hình hiển thị:**
+```
+========================================================================
+  MyVPS v1.0.0 - Installation Complete!
+========================================================================
+
+  SERVER INFO
+  IP:                  203.0.113.50
+  SSH:                 ssh -p 22 root@203.0.113.50
+
+  DATABASE
+  phpMyAdmin:          http://203.0.113.50:8080/phpmyadmin
+  DB Admin User:       admin
+  DB Admin Pass:       xxxxxxxxxxxxxxxx
+
+  -----------------------------------------------------------------------
+  DASHBOARD UI (Web Panel)
+  -----------------------------------------------------------------------
+  URL:               http://203.0.113.50:9090
+  API Key:           xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+  Cách kết nối Dashboard:
+    1. Mở trình duyệt: http://203.0.113.50:9090
+    2. Nhập API Key ở trên
+    3. Click Connect
+  -----------------------------------------------------------------------
+```
+
+**Xem lại thông tin bất kỳ lúc nào:**
+```bash
+cat /etc/myvps/.info.conf
+```
+
+## Cài thủ công (từng bước)
+
+### Bước 1: Clone repo + cài LEMP
+
+```bash
 cd /root
 git clone https://github.com/quatang20172-dotcom/dkvps.git myvps
 cd myvps
 bash install.sh
 ```
 
-Installer sẽ tự động cài:
-- Nginx (web server)
-- PHP 8.1 (PHP-FPM)
-- MariaDB 10.5 (database server)
-- Redis + Memcached (cache)
-- Fail2Ban (bảo mật)
-- phpMyAdmin (quản lý DB)
-- WP-CLI (quản lý WordPress)
-- acme.sh (SSL certificates)
-- CLI tool `myvps` tại `/usr/bin/myvps`
-
-## Bước 2: Cài đặt Agent (API Server)
+### Bước 2: Cài Agent (nếu script chưa cài)
 
 ```bash
+# Cài Node.js
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt-get install -y nodejs
+
+# Cài Agent
 cd /root/myvps/agent
-npm install
-```
+npm install --production
 
-### Cấu hình Agent
-
-File cấu hình: `/etc/myvps/.myvps.conf`
-
-```ini
-# API key để xác thực - thay đổi cho bảo mật!
-agent_api_key=YOUR_RANDOM_API_KEY_HERE
-
-# JWT secret
-jwt_secret=YOUR_RANDOM_JWT_SECRET
-
-# Port (mặc định 9090)
-agent_port=9090
-```
-
-**Tạo API key ngẫu nhiên:**
-```bash
 # Tạo API key
-openssl rand -base64 36
+API_KEY=$(openssl rand -base64 48 | tr -dc 'a-zA-Z0-9' | head -c 48)
+echo "agent_api_key=$API_KEY" >> /etc/myvps/.myvps.conf
 
-# Tạo JWT secret
-openssl rand -hex 32
+# Chạy Agent
+node server.js
 ```
 
-### Chạy Agent
+### Bước 3: Tạo systemd service
 
 ```bash
-# Chạy trực tiếp
-cd /root/myvps/agent && node server.js
-
-# Chạy với PM2 (khuyến nghị)
-npm install -g pm2
-pm2 start /root/myvps/agent/server.js --name myvps-agent
-pm2 save
-pm2 startup
-
-# Chạy với systemd
-sudo tee /etc/systemd/system/myvps-agent.service << 'EOF'
+cat > /etc/systemd/system/myvps-agent.service << 'EOF'
 [Unit]
-Description=MyVPS Agent
+Description=MyVPS Agent - Dashboard API Server
 After=network.target
 
 [Service]
@@ -84,14 +107,15 @@ WorkingDirectory=/root/myvps/agent
 ExecStart=/usr/bin/node server.js
 Restart=always
 RestartSec=5
-Environment=PORT=9090
+Environment=AGENT_PORT=9090
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-sudo systemctl enable myvps-agent
-sudo systemctl start myvps-agent
+systemctl daemon-reload
+systemctl enable myvps-agent
+systemctl start myvps-agent
 ```
 
 ### Verify Agent
@@ -104,37 +128,15 @@ curl http://localhost:9090/api/health
 curl -X POST http://localhost:9090/api/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"api_key":"YOUR_API_KEY"}'
-
-# Kiểm tra system status
-curl http://localhost:9090/api/system/status \
-  -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
-## Bước 3: Truy cập Dashboard
+### Bước 4: Truy cập Dashboard
 
-### Cách 1: Qua Agent (khuyến nghị)
+1. Mở trình duyệt: `http://YOUR_VPS_IP:9090`
+2. Nhập **API Key** (từ `/etc/myvps/.info.conf`)
+3. Click **Connect**
 
-Mở trình duyệt, truy cập:
-```
-http://YOUR_VPS_IP:9090
-```
-
-### Cách 2: File HTML trực tiếp
-
-```bash
-# Mở file dashboard/index.html trên bất kỳ máy nào
-# Không cần cài gì - zero dependencies
-open dashboard/index.html
-```
-
-### Đăng nhập Dashboard
-
-1. Mở `http://YOUR_VPS_IP:9090`
-2. Nhập **Server URL**: `http://YOUR_VPS_IP:9090`
-3. Nhập **API Key**: API key đã cấu hình ở Bước 2
-4. Click **Connect**
-
-## Bước 4: Mở Port Firewall
+### Bước 5: Mở Port Firewall
 
 ```bash
 # UFW (Ubuntu)
