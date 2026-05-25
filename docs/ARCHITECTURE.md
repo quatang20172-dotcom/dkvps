@@ -1,175 +1,161 @@
 # MyVPS Architecture
 
-## Overview
+## Design Philosophy
 
-MyVPS is a VPS management tool with two interfaces:
-1. **CLI (Bash)** - Terminal-based management via `myvps` command
-2. **Web Dashboard (Node.js + React)** - Browser-based management
-
-Both interfaces manage the same underlying system through shared configurations and direct system commands.
+**Dashboard chạy riêng, Agent chạy trên VPS** - tách biệt hoàn toàn để:
+1. Dashboard không tốn tài nguyên VPS
+2. Một dashboard quản lý được nhiều VPS
+3. Agent nhẹ (~15MB RAM, 4 dependencies)
+4. Dashboard có thể deploy miễn phí (Vercel, Netlify)
 
 ## System Architecture
 
 ```
-                    ┌─────────────────────┐
-                    │    Web Dashboard     │
-                    │  (React + Tailwind)  │
-                    └─────────┬───────────┘
-                              │ HTTP/WS
-                    ┌─────────▼───────────┐
-                    │    API Server        │
-                    │  (Node.js/Express)   │
-                    │  - JWT Auth          │
-                    │  - Rate Limiting     │
-                    │  - SQLite DB         │
-                    │  - WebSocket         │
-                    └─────────┬───────────┘
-                              │ exec/spawn
-        ┌─────────────────────▼─────────────────────┐
-        │              CLI Core                      │
-        │  ┌──────────┬──────────┬──────────┐       │
-        │  │ config   │functions │ colors   │       │
-        │  └──────────┴──────────┴──────────┘       │
-        │                                            │
-        │  ┌─────────────── Modules ──────────────┐ │
-        │  │ domain   │ database │ php     │ nginx │ │
-        │  │ ssl      │ ssh      │ firewall│ cache │ │
-        │  │ swap     │ backup   │ wordpress│ laravel│ │
-        │  │ monitor  │ log      │ fail2ban │ cron  │ │
-        │  │ utility  │ admin    │ port     │       │ │
-        │  └──────────────────────────────────────┘ │
-        └─────────────────────┬─────────────────────┘
-                              │
-        ┌─────────────────────▼─────────────────────┐
-        │           System Services                  │
-        │  Nginx  PHP-FPM  MariaDB  Redis  Memcached│
-        │  Fail2Ban  SSHD  Firewall  Cron           │
-        └───────────────────────────────────────────┘
+                    ┌─────────────────────────┐
+                    │   Web Dashboard (React)  │
+                    │   Runs separately:       │
+                    │   - Vercel / Netlify     │
+                    │   - Docker               │
+                    │   - Local dev server     │
+                    └─────────┬───────────────┘
+                              │ HTTPS + WSS
+                    ┌─────────▼──────────────────┐
+                    │   VPS Server                │
+                    │   ┌────────────────────┐   │
+                    │   │  Agent (Port 9090) │   │
+                    │   │  express + ws      │   │
+                    │   │  JWT auth          │   │
+                    │   │  4 packages only   │   │
+                    │   └────────┬───────────┘   │
+                    │            │ child_process  │
+                    │   ┌────────▼───────────┐   │
+                    │   │  CLI (myvps)       │   │
+                    │   │  Bash modules      │   │
+                    │   └────────┬───────────┘   │
+                    │            │ systemctl      │
+                    │   ┌────────▼───────────┐   │
+                    │   │  Nginx PHP MariaDB │   │
+                    │   │  Redis Memcached   │   │
+                    │   └────────────────────┘   │
+                    └────────────────────────────┘
 ```
 
-## Directory Structure
+## Component Separation
 
-### Configuration
-```
-/etc/myvps/
-├── .myvps.conf          # Global config (IP, ports, passwords)
-├── user/                # Domain configs (.domain.conf)
-├── cron/                # Scheduled tasks
-│   ├── backup/
-│   └── alert/
-├── nginx/               # Custom nginx configs
-├── ssl/                 # SSL certificates
-├── backup/              # Backup storage
-│   ├── db/
-│   └── source/
-└── menu/                # CLI scripts
-```
+### Agent (runs on VPS) - `agent/`
+- **Purpose**: Minimal API bridge between Dashboard and CLI
+- **Resources**: ~15-20MB RAM, negligible CPU when idle
+- **Dependencies**: express, helmet, jsonwebtoken, ws
+- **Port**: 9090 (configurable)
+- **Auth**: API key → JWT token
+- **Endpoints**: REST for all management + WebSocket for monitoring
+- **Security**: Runs behind VPS firewall, JWT-protected
 
-### Domain Directory
-```
-/home/{username}/
-└── {domain}/
-    ├── public_html/     # Web root
-    ├── logs/            # Access/error/PHP logs
-    ├── tmp/             # Temp files
-    ├── ssl/             # SSL certs
-    ├── session/         # PHP sessions
-    └── restore/         # Restore files
-```
+### Dashboard (runs anywhere) - `web/frontend/`
+- **Purpose**: Rich UI for managing VPS servers
+- **Deployment**: Static SPA - Vercel, Netlify, Docker, local
+- **Auth**: Connects to Agent using API key, stores JWT in localStorage
+- **Multi-server**: Manages multiple VPS agents from one UI
+- **Framework**: React 18 + Tailwind CSS + Vite
+- **State**: ServerContext manages connections, api clients
 
-## Security Model
+### CLI (runs on VPS) - `cli/`
+- **Purpose**: Direct server management via SSH
+- **Usage**: `myvps domain add`, `myvps ssl install`, etc
+- **Independent**: Works without Agent or Dashboard
 
-### User Isolation
-- Each domain gets a dedicated Linux user
-- SFTP chroot jail per user (`/home/{user}/`)
-- PHP-FPM pool per domain (separate port, separate process user)
-- SELinux contexts for web content
+## API Reference
 
 ### Authentication
-- CLI: Requires root access
-- Web: JWT tokens + HTTP-only cookies
-- phpMyAdmin: HTTP Basic Auth
-- SFTP: Linux user credentials
+```
+POST /api/auth/login        { api_key: "..." } → { token: "jwt..." }
+POST /api/auth/generate-key { password: "..." } → { api_key: "..." }
+GET  /api/auth/verify        → { valid: true, role: "admin" }
+GET  /api/health              → { status: "ok", hostname, uptime }
+```
 
-### Network
-- Firewall (firewalld/ufw) with explicit port management
-- Fail2Ban for SSH brute-force protection
-- Admin panel on custom port (default 8080)
-- SSL/TLS with modern cipher suites
-
-## Web API Design
-
-### Authentication
-- `POST /api/auth/login` - Login (returns JWT)
-- `POST /api/auth/logout` - Logout
-- `GET /api/auth/me` - Current user
-- `POST /api/auth/change-password` - Change password
+### System (requires auth)
+```
+GET /api/system/status      → { ip, cpu, memory, disk, uptime, services }
+GET /api/system/info         → { kernel, software, timezone }
+GET /api/system/processes    → { processes: [...] }
+GET /api/system/disk         → { disks: [...] }
+GET /api/system/network      → { connections: [...] }
+```
 
 ### Domains
-- `GET /api/domains` - List domains
-- `GET /api/domains/:domain` - Domain info
-- `POST /api/domains` - Add domain
-- `DELETE /api/domains/:domain` - Delete domain
-- `POST /api/domains/:domain/suspend` - Suspend
-- `POST /api/domains/:domain/unsuspend` - Unsuspend
+```
+GET    /api/domains              → { domains: [...] }
+GET    /api/domains/:domain      → { domain, username, php_version, ... }
+POST   /api/domains              { domain: "..." }
+DELETE /api/domains/:domain
+POST   /api/domains/:domain/suspend
+POST   /api/domains/:domain/unsuspend
+POST   /api/domains/:domain/fix-permissions
+```
 
 ### Databases
-- `GET /api/databases` - List
-- `POST /api/databases` - Create
-- `DELETE /api/databases/:name` - Delete
-- `POST /api/databases/:name/export` - Export
+```
+GET    /api/databases            → { databases: [...] }
+GET    /api/databases/:name/info → { name, tables, size_mb }
+POST   /api/databases            { name, user }  → { name, user, password }
+DELETE /api/databases/:name
+POST   /api/databases/:name/export → { file }
+```
 
 ### Services
-- `GET /api/services` - All service statuses
-- `POST /api/services/:name/:action` - Control (start/stop/restart)
-
-### Monitor
-- `GET /api/monitor/status` - System status
-- `GET /api/monitor/processes` - Top processes
-- `GET /api/monitor/disk` - Disk usage
-- `GET /api/monitor/audit-log` - Action audit log
-- `WS /ws` - Real-time stats (WebSocket)
-
-### SSL, PHP, Firewall, Cache, Backup, WordPress
-- Standard CRUD endpoints for each module
-
-## Tech Stack
-
-### CLI
-- **Language**: Bash
-- **Config Format**: Key-value files
-- **Template Engine**: Heredocs
-
-### Web Backend
-- **Runtime**: Node.js 18+
-- **Framework**: Express.js
-- **Auth**: JWT + bcrypt
-- **Database**: SQLite (better-sqlite3)
-- **Real-time**: WebSocket (ws)
-- **Security**: Helmet, CORS, Rate limiting
-
-### Web Frontend
-- **Framework**: React 18
-- **Build Tool**: Vite
-- **Styling**: Tailwind CSS
-- **Charts**: Recharts
-- **Icons**: Lucide React
-- **HTTP Client**: Axios
-- **Routing**: React Router v6
-
-## Development Setup
-
-```bash
-# Backend
-cd web/backend
-npm install
-npm run dev
-
-# Frontend
-cd web/frontend
-npm install
-npm run dev
-
-# Full install on VPS
-bash install.sh
 ```
+GET    /api/services             → { services: { nginx: "active", ... } }
+POST   /api/services/:name/:action   (start|stop|restart|reload)
+```
+
+### SSL
+```
+GET    /api/ssl                  → { certificates }
+POST   /api/ssl/install          { domain, provider }
+POST   /api/ssl/renew
+DELETE /api/ssl/:domain
+```
+
+### PHP
+```
+GET    /api/php/info             → { version, modules, pools }
+POST   /api/php/version          { version }
+POST   /api/php/restart
+```
+
+### Firewall
+```
+GET    /api/firewall/status      → { state, ports }
+POST   /api/firewall/open        { port, protocol }
+POST   /api/firewall/close       { port, protocol }
+```
+
+### Cache
+```
+GET    /api/cache/status         → { redis, memcached }
+POST   /api/cache/redis/flush
+POST   /api/cache/opcache/reset
+POST   /api/cache/clear-all
+```
+
+### Backup
+```
+GET    /api/backup               → { backups: [...] }
+POST   /api/backup/create        { domain, type }
+DELETE /api/backup/:filename
+```
+
+### WebSocket
+```
+WS /ws?token=jwt_token
+→ Every 5s: { type: "stats", data: { cpu, memory, disk, services }, ts }
+```
+
+## Security
+
+1. **Agent protected by API key** - generated during install
+2. **JWT tokens** - short-lived, rotatable
+3. **Agent only on localhost/firewall** - expose through reverse proxy if needed
+4. **No secrets stored on Dashboard** - only JWT tokens in localStorage
+5. **HTTPS recommended** - especially for remote connections

@@ -1,30 +1,25 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useServer } from '../contexts/ServerContext';
 
 export function useWebSocket() {
+    const { wsUrl } = useServer();
     const [stats, setStats] = useState(null);
     const [connected, setConnected] = useState(false);
     const ws = useRef(null);
     const reconnectTimer = useRef(null);
 
     const connect = useCallback(() => {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const url = `${protocol}//${window.location.host}/ws`;
+        if (!wsUrl) return;
 
-        ws.current = new WebSocket(url);
+        ws.current = new WebSocket(wsUrl);
 
-        ws.current.onopen = () => {
-            setConnected(true);
-        };
+        ws.current.onopen = () => setConnected(true);
 
         ws.current.onmessage = (event) => {
             try {
-                const message = JSON.parse(event.data);
-                if (message.type === 'stats') {
-                    setStats(message.data);
-                }
-            } catch (e) {
-                // Ignore parse errors
-            }
+                const msg = JSON.parse(event.data);
+                if (msg.type === 'stats') setStats(msg.data);
+            } catch { /* ignore */ }
         };
 
         ws.current.onclose = () => {
@@ -32,10 +27,8 @@ export function useWebSocket() {
             reconnectTimer.current = setTimeout(connect, 5000);
         };
 
-        ws.current.onerror = () => {
-            ws.current?.close();
-        };
-    }, []);
+        ws.current.onerror = () => ws.current?.close();
+    }, [wsUrl]);
 
     useEffect(() => {
         connect();

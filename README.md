@@ -1,68 +1,130 @@
 # MyVPS - VPS Management Tool
 
-A comprehensive VPS management tool with CLI interface and Web Dashboard. Inspired by LarVPS, built from scratch with modern architecture.
-
-## Features
-
-- **LEMP Stack Auto-Install**: Nginx + PHP-FPM + MariaDB + Redis + Memcached
-- **Domain Management**: Add/remove/suspend domains with isolated users
-- **SSL Management**: Let's Encrypt, ZeroSSL, Custom SSL
-- **Database Management**: Create/delete/import/export MariaDB databases
-- **PHP Management**: Multi-version PHP (7.4 - 8.3), per-domain PHP pools
-- **WordPress & Laravel**: One-click installer
-- **Cache Management**: OPcache, Memcached, Redis
-- **Security**: Fail2Ban, Firewall, SSH hardening, SFTP isolation
-- **Backup & Restore**: Scheduled backups with cloud storage (rclone)
-- **Web Dashboard**: Modern UI to manage everything visually
-- **Monitoring**: Real-time CPU, RAM, Disk, Service status
-- **Telegram Alerts**: SSH login notifications
+A complete VPS management solution inspired by LarVPS. Features a **Bash CLI** for server management, a **lightweight API Agent** running on the VPS, and a **Web Dashboard** that can run anywhere to remotely manage your servers.
 
 ## Architecture
 
 ```
-MyVPS
-├── CLI (Bash Scripts)          # Terminal-based management
-│   ├── myvps                   # Main entry point
-│   ├── core/                   # Core functions & config
-│   ├── modules/                # Feature modules
-│   └── templates/              # Config templates
-│
-└── Web Dashboard               # Browser-based management
-    ├── Backend (Node.js)       # REST API + WebSocket
-    └── Frontend (React)        # Modern SPA dashboard
+┌──────────────────────────┐         ┌───────────────────────────────────┐
+│   Web Dashboard (React)  │──API──▶ │  VPS Server                      │
+│   Runs anywhere:         │         │  ┌──────────────────────────┐    │
+│   - Vercel/Netlify       │◀──WS─── │  │  Agent (Node.js ~15MB)   │    │
+│   - Docker               │         │  │  Port 9090               │    │
+│   - Local machine        │         │  └──────────┬───────────────┘    │
+│                          │         │             │ exec                │
+│   Features:              │         │  ┌──────────▼───────────────┐    │
+│   - Multi-server mgmt    │         │  │  CLI (myvps)             │    │
+│   - Real-time monitoring │         │  │  Bash scripts            │    │
+│   - Domain/DB/SSL/etc    │         │  └──────────┬───────────────┘    │
+│   - Server switching     │         │             │                    │
+└──────────────────────────┘         │  ┌──────────▼───────────────┐    │
+                                     │  │  Nginx  PHP-FPM  MariaDB │    │
+                                     │  │  Redis  Memcached  etc   │    │
+                                     │  └──────────────────────────┘    │
+                                     └───────────────────────────────────┘
 ```
 
-## Supported OS
+## Key Design Decisions
 
-- AlmaLinux 8, 9
-- RockyLinux 8, 9
-- Ubuntu 20.04, 22.04
+- **Agent is ultra-lightweight** (~15MB RAM) - runs on the VPS with minimal impact
+- **Dashboard runs separately** - deploy on Vercel, Netlify, or any static host
+- **Multi-server support** - one dashboard manages multiple VPS servers
+- **API-first** - all operations via REST API + WebSocket for real-time data
+- **CLI still works independently** - SSH into server and use `myvps` command directly
 
-## Quick Install
+## Components
 
+### 1. CLI (`cli/`)
+Bash-based VPS management with 20+ modules:
+- Domain management (add, delete, suspend, unsuspend)
+- Database management (MariaDB: create, delete, import, export)
+- PHP management (multi-version: 7.4, 8.0, 8.1, 8.2, 8.3)
+- Nginx config management
+- SSL certificates (Let's Encrypt, ZeroSSL via acme.sh)
+- SSH/SFTP management with chroot jail
+- Firewall management (firewalld/ufw)
+- Cache management (Redis, Memcached, OPcache)
+- Backup with cloud sync (rclone)
+- WordPress & Laravel auto-installer
+- System monitoring & logging
+- Fail2Ban, Swap, Crontab management
+
+### 2. Agent (`agent/`)
+Lightweight Node.js API server running on the VPS:
+- **4 dependencies only**: express, helmet, jsonwebtoken, ws
+- JWT authentication via API key
+- REST API for all management operations
+- WebSocket for real-time monitoring (CPU, RAM, Disk, Services)
+- Port 9090 by default
+
+### 3. Web Dashboard (`web/frontend/`)
+React SPA for remote VPS management:
+- Connect to multiple VPS agents
+- Real-time dashboard with CPU/RAM/Disk gauges
+- Domain, Database, SSL, PHP, Service management
+- Server switching in sidebar
+- Built with React 18 + Tailwind CSS + Vite
+
+### 4. Installer (`install.sh`)
+Auto-setup script for LEMP stack:
+- Supports: AlmaLinux 8/9, RockyLinux 8/9, Ubuntu 20.04/22.04
+- Installs: Nginx, PHP 8.1, MariaDB 10.5, Redis, Memcached
+- Configures: Firewall, Fail2Ban, SFTP, phpMyAdmin, WP-CLI
+
+## Quick Start
+
+### Install on VPS
 ```bash
-curl -sO https://yourdomain.com/install.sh && bash install.sh
+curl -sO https://your-domain/install && bash install
 ```
 
-## CLI Usage
-
+### Run Agent on VPS
 ```bash
-myvps                    # Open main menu
+cd /path/to/myvps/agent
+npm install
+npm start
+# Agent runs on port 9090
+```
+
+### Run Dashboard (anywhere)
+```bash
+cd web/frontend
+npm install
+npm run dev
+# Dashboard runs on port 3000
+# Connect to your VPS agent via URL + API key
+```
+
+### CLI Usage
+```bash
+myvps                    # Interactive menu
 myvps domain add         # Add domain
-myvps domain list        # List domains
 myvps db create          # Create database
 myvps ssl install        # Install SSL
-myvps wp install          # Install WordPress
-myvps status             # Show system status
+myvps status             # System status
+myvps help               # Help
 ```
 
-## Web Dashboard
+## Features
 
-Access at: `http://your-ip:8080`
+| Feature | CLI | Agent API | Dashboard |
+|---------|-----|-----------|-----------|
+| Domain management | ✓ | ✓ | ✓ |
+| Database management | ✓ | ✓ | ✓ |
+| PHP version switching | ✓ | ✓ | ✓ |
+| SSL certificates | ✓ | ✓ | ✓ |
+| Service control | ✓ | ✓ | ✓ |
+| Firewall/Ports | ✓ | ✓ | ✓ |
+| Cache management | ✓ | ✓ | ✓ |
+| Backup/Restore | ✓ | ✓ | ✓ |
+| WordPress installer | ✓ | ✓ | ✓ |
+| Real-time monitoring | ✓ | WebSocket | ✓ |
+| Multi-server | - | - | ✓ |
 
-Default credentials:
-- Username: admin
-- Password: (generated during install)
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md) - System design and API reference
+- [Web UI Plan](docs/WEB-UI-PLAN.md) - Roadmap and technical decisions
 
 ## License
 

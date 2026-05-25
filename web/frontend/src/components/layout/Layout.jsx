@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { logout } from '../../utils/api';
+import { useServer } from '../../contexts/ServerContext';
 import {
     LayoutDashboard, Globe, Database, Server, Shield, Code2,
-    Lock, HardDrive, Archive, Activity, Menu, X, LogOut, ChevronDown
+    Lock, HardDrive, Archive, Activity, Menu, X, ChevronDown, MonitorSmartphone
 } from 'lucide-react';
 
 const navItems = [
@@ -17,31 +17,22 @@ const navItems = [
     { to: '/cache', icon: HardDrive, label: 'Cache' },
     { to: '/backup', icon: Archive, label: 'Backup' },
     { to: '/monitor', icon: Activity, label: 'Monitor' },
+    { to: '/servers', icon: MonitorSmartphone, label: 'Servers' },
 ];
 
-export default function Layout({ children, user, onLogout }) {
+export default function Layout({ children }) {
     const [sidebarOpen, setSidebarOpen] = useState(false);
-    const navigate = useNavigate();
-
-    const handleLogout = async () => {
-        await logout();
-        onLogout();
-        navigate('/login');
-    };
+    const { activeServer, servers, setActiveServerId } = useServer();
 
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-            {/* Mobile sidebar overlay */}
             {sidebarOpen && (
-                <div className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-                     onClick={() => setSidebarOpen(false)} />
+                <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
             )}
 
-            {/* Sidebar */}
             <aside className={`fixed top-0 left-0 z-50 h-full w-64 bg-white dark:bg-gray-800
                 border-r border-gray-200 dark:border-gray-700 transform transition-transform
                 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
-                {/* Logo */}
                 <div className="flex items-center justify-between h-16 px-6 border-b border-gray-200 dark:border-gray-700">
                     <div className="flex items-center space-x-2">
                         <Server className="w-6 h-6 text-primary-600" />
@@ -52,7 +43,21 @@ export default function Layout({ children, user, onLogout }) {
                     </button>
                 </div>
 
-                {/* Nav */}
+                {/* Server switcher */}
+                {servers.length > 1 && (
+                    <div className="px-3 py-2 border-b border-gray-200 dark:border-gray-700">
+                        <select
+                            value={activeServer?.id || ''}
+                            onChange={e => setActiveServerId(e.target.value)}
+                            className="w-full text-sm bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-2 py-1.5"
+                        >
+                            {servers.map(s => (
+                                <option key={s.id} value={s.id}>{s.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                )}
+
                 <nav className="px-3 py-4 space-y-1 overflow-y-auto h-[calc(100vh-8rem)]">
                     {navItems.map(item => (
                         <NavLink
@@ -73,28 +78,22 @@ export default function Layout({ children, user, onLogout }) {
                     ))}
                 </nav>
 
-                {/* User */}
                 <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200 dark:border-gray-700">
-                    <button onClick={handleLogout}
-                        className="flex items-center w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg">
-                        <LogOut className="w-4 h-4 mr-2" />
-                        Logout ({user?.username})
-                    </button>
+                    <div className="text-xs text-gray-500 truncate">
+                        {activeServer?.name} ({activeServer?.url})
+                    </div>
                 </div>
             </aside>
 
-            {/* Main content */}
             <div className="lg:ml-64">
-                {/* Top bar */}
                 <header className="sticky top-0 z-30 h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center px-4">
                     <button className="lg:hidden mr-4" onClick={() => setSidebarOpen(true)}>
                         <Menu className="w-6 h-6" />
                     </button>
                     <div className="flex-1" />
-                    <span className="text-sm text-gray-500">MyVPS v1.0.0</span>
+                    <span className="text-sm text-gray-500">MyVPS Dashboard</span>
                 </header>
 
-                {/* Page content */}
                 <main className="p-4 lg:p-6">
                     {children}
                 </main>
