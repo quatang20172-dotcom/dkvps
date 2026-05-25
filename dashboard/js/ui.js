@@ -83,6 +83,10 @@ function renderApp() {
         ['ftp', 'upload', 'FTP'],
         ['docker', 'box', 'Docker'],
         ['pm2', 'cpu', 'PM2'],
+        ['appstore', 'grid', 'App Store'],
+        ['sshkeys', 'lock', 'SSH Keys'],
+        ['cloudbackup', 'cloud', 'Cloud Backup'],
+        ['migrate', 'shuffle', 'Migration'],
         ['servers', 'monitor', 'Servers'],
     ];
 

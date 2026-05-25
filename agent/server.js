@@ -35,6 +35,10 @@ const deploy = require('./src/routes/deploy');
 const docker = require('./src/routes/docker');
 const pm2Routes = require('./src/routes/pm2');
 const terminal = require('./src/routes/terminal');
+const migrate = require('./src/routes/migrate');
+const appstore = require('./src/routes/appstore');
+const sshkeys = require('./src/routes/sshkeys');
+const cloudbackup = require('./src/routes/cloudbackup');
 const { setupWS } = require('./src/utils/ws');
 const { loadConfig } = require('./src/utils/config');
 
@@ -100,6 +104,10 @@ app.use('/api/deploy', authMiddleware, deploy);
 app.use('/api/docker', authMiddleware, docker);
 app.use('/api/pm2', authMiddleware, pm2Routes);
 app.use('/api/terminal', authMiddleware, terminal);
+app.use('/api/migrate', authMiddleware, migrate);
+app.use('/api/appstore', authMiddleware, appstore);
+app.use('/api/sshkeys', authMiddleware, sshkeys);
+app.use('/api/cloudbackup', authMiddleware, cloudbackup);
 
 // Public webhook trigger endpoint (auth via token in URL)
 app.post('/api/deploy/trigger/:token', (req, res, next) => {

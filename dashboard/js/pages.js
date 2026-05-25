@@ -443,7 +443,7 @@ function renderMonitorStats() {
     set('m-disk-sub', formatBytes(s.disk?.used) + ' / ' + formatBytes(s.disk?.total));
 }
 
-// ============ Servers ============
+// ============ Servers (Enhanced Multi-Server) ============
 pages.servers = async (el) => {
     el.innerHTML = `
         <div class="flex-between mb-4">
@@ -460,7 +460,7 @@ pages.servers = async (el) => {
                 <button class="btn btn-secondary" id="cancel-add-srv">Cancel</button>
             </div>
         </div>
-        <div class="grid grid-3" id="srv-grid"></div>`;
+        <div class="grid grid-2" id="srv-grid"></div>`;
 
     document.getElementById('add-srv-btn').onclick = () => document.getElementById('add-srv-form').classList.toggle('hidden');
     document.getElementById('cancel-add-srv').onclick = () => document.getElementById('add-srv-form').classList.add('hidden');
@@ -481,28 +481,57 @@ pages.servers = async (el) => {
         }
     };
 
-    // Render server cards
     const grid = document.getElementById('srv-grid');
     state.servers.forEach(s => {
         const isActive = s.id === state.activeId;
+        const cardId = `srv-card-${s.id}`;
         grid.innerHTML += `
-            <div class="card" style="${isActive ? 'border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-light)' : ''};cursor:pointer" onclick="switchServer('${s.id}')">
+            <div class="card" id="${cardId}" style="${isActive ? 'border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-light)' : ''};cursor:pointer" onclick="switchServer('${s.id}')">
                 <div class="flex-between mb-2">
-                    <strong>${s.name}</strong>
-                    ${isActive ? '<span class="badge badge-green">Active</span>' : ''}
+                    <strong>${icon('server',16)} ${s.name}</strong>
+                    <span id="srv-health-${s.id}" class="badge badge-yellow">checking...</span>
                 </div>
                 <p class="mono text-xs text-muted mb-2">${s.url}</p>
+                <div id="srv-stats-${s.id}" class="text-sm text-muted mb-2">Loading stats...</div>
+                <div id="srv-services-${s.id}" class="text-sm mb-2"></div>
                 <div class="flex gap-sm" onclick="event.stopPropagation()">
+                    ${isActive ? `<span class="badge badge-green">Active</span>` : `<button class="btn btn-secondary btn-sm" onclick="switchServer('${s.id}')">${icon('monitor',12)} Switch</button>`}
                     <button class="btn btn-danger btn-sm" onclick="removeSrv('${s.id}','${s.name}')">${icon('trash',12)} Remove</button>
                 </div>
             </div>`;
     });
 
-    // Check health
+    // Fetch health + stats for all servers in parallel
     state.servers.forEach(async s => {
         try {
-            await fetch(`${s.url}/api/health`, { signal: AbortSignal.timeout(5000) });
-        } catch {}
+            const healthRes = await fetch(`${s.url}/api/health`, { signal: AbortSignal.timeout(5000) });
+            const health = await healthRes.json();
+            const healthEl = document.getElementById(`srv-health-${s.id}`);
+            if (healthEl) { healthEl.className = 'badge badge-green'; healthEl.textContent = `online v${health.version || '?'}`; }
+
+            const statusRes = await fetch(`${s.url}/api/system/status`, {
+                headers: { 'Authorization': `Bearer ${s.token}` },
+                signal: AbortSignal.timeout(5000)
+            });
+            const st = await statusRes.json();
+            const statsEl = document.getElementById(`srv-stats-${s.id}`);
+            if (statsEl) {
+                const memPct = st.memory?.total ? (st.memory.used / st.memory.total * 100).toFixed(1) : 0;
+                const diskPct = st.disk?.usage || '0%';
+                statsEl.innerHTML = `CPU: ${(st.cpu?.usage || 0).toFixed(1)}% &nbsp; RAM: ${memPct}% &nbsp; Disk: ${diskPct} &nbsp; IP: ${st.ip || '—'}`;
+            }
+            const svcEl = document.getElementById(`srv-services-${s.id}`);
+            if (svcEl && st.services) {
+                svcEl.innerHTML = Object.entries(st.services).map(([n, v]) =>
+                    `<span class="badge ${v === 'active' ? 'badge-green' : 'badge-red'}" style="font-size:11px;margin:1px">${n}</span>`
+                ).join('');
+            }
+        } catch {
+            const healthEl = document.getElementById(`srv-health-${s.id}`);
+            if (healthEl) { healthEl.className = 'badge badge-red'; healthEl.textContent = 'offline'; }
+            const statsEl = document.getElementById(`srv-stats-${s.id}`);
+            if (statsEl) statsEl.textContent = 'Unable to connect';
+        }
     });
 };
 
@@ -1015,5 +1044,381 @@ window.pm2Logs = async (id) => {
         const r = await apiGet(`/pm2/${id}/logs`);
         const w = window.open('', '_blank', 'width=800,height=600');
         w.document.write(`<pre style="background:#1a1b26;color:#a9b1d6;padding:16px;font-size:13px;margin:0">${r.logs || 'No logs'}</pre>`);
+    } catch (e) { alert(e.message); }
+};
+
+// ============ App Store ============
+pages.appstore = async (el) => {
+    el.innerHTML = `<h1 class="page-title">App Store</h1>
+        <p class="text-muted mb-4">One-click install popular applications to your domains</p>
+        <div class="grid grid-3" id="app-grid">Loading...</div>`;
+
+    try {
+        const [apps, domains] = await Promise.all([apiGet('/appstore'), apiGet('/domains')]);
+        const domainList = (domains.domains || []).map(d => d.domain);
+        const grid = document.getElementById('app-grid');
+        grid.innerHTML = (apps.apps || []).map(app => {
+            const colors = { CMS: '#2563eb', Database: '#16a34a', Tools: '#d97706', Framework: '#9333ea', Runtime: '#e11d48', Web: '#0891b2' };
+            const color = colors[app.category] || '#6b7280';
+            return `<div class="card">
+                <div class="flex gap-sm mb-2">
+                    <div style="width:40px;height:40px;background:${color};color:white;border-radius:var(--radius);display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:18px">${app.icon}</div>
+                    <div><strong>${app.name}</strong><br><span class="text-xs" style="color:${color}">${app.category}</span></div>
+                </div>
+                <p class="text-sm text-muted mb-2">${app.description}</p>
+                <div class="flex gap-sm">
+                    <select class="app-domain-sel" id="app-domain-${app.id}" style="flex:1;font-size:12px">
+                        <option value="">Select domain...</option>
+                        ${domainList.map(d => `<option value="${d}">${d}</option>`).join('')}
+                    </select>
+                    <button class="btn btn-primary btn-sm" onclick="appInstall('${app.id}')">${icon('download',12)} Install</button>
+                </div>
+            </div>`;
+        }).join('');
+    } catch (e) { document.getElementById('app-grid').innerHTML = `<p style="color:var(--red)">${e.message}</p>`; }
+};
+
+window.appInstall = async (id) => {
+    const domain = document.getElementById(`app-domain-${id}`)?.value;
+    if (!domain && id !== 'redis-commander') return alert('Select a domain first');
+    if (!confirm(`Install on ${domain || 'server'}?`)) return;
+    try {
+        const r = await apiPost(`/appstore/${id}/install`, { domain });
+        alert(r.message);
+    } catch (e) { alert(e.message); }
+};
+
+// ============ SSH Keys ============
+pages.sshkeys = async (el) => {
+    el.innerHTML = `<h1 class="page-title">SSH Key Management</h1>
+        <div class="grid grid-2 mb-4">
+            <div class="card">
+                <h3>Add SSH Key</h3>
+                <textarea id="ssh-key-input" placeholder="Paste your public key (ssh-rsa AAAA... or ssh-ed25519 AAAA...)" style="width:100%;height:80px;font-family:monospace;font-size:12px;background:var(--bg3);color:var(--fg);border:1px solid var(--border);border-radius:var(--radius);padding:8px;resize:vertical"></textarea>
+                <button class="btn btn-primary btn-sm mt-2" onclick="sshAddKey()">${icon('plus',14)} Add Key</button>
+            </div>
+            <div class="card">
+                <h3>SSH Config</h3>
+                <div id="ssh-config">Loading...</div>
+            </div>
+        </div>
+        <div class="card mb-4">
+            <h3>Generate Key Pair</h3>
+            <div class="form-row">
+                <select id="ssh-gen-type"><option value="ed25519">Ed25519 (recommended)</option><option value="rsa">RSA 4096</option></select>
+                <input type="text" id="ssh-gen-comment" placeholder="Comment (e.g. my-laptop)">
+                <button class="btn btn-secondary" onclick="sshGenerate()">${icon('key',14)} Generate</button>
+            </div>
+        </div>
+        <div class="card" style="padding:0;overflow:auto">
+            <table><thead><tr><th>Type</th><th>Comment</th><th>Fingerprint</th><th style="text-align:right">Actions</th></tr></thead>
+            <tbody id="ssh-keys-list"><tr><td colspan="4" style="text-align:center;padding:30px;color:var(--fg3)">Loading...</td></tr></tbody></table>
+        </div>`;
+
+    try {
+        const [keys, config] = await Promise.all([apiGet('/sshkeys'), apiGet('/sshkeys/config')]);
+
+        // Render config
+        document.getElementById('ssh-config').innerHTML = `
+            <div class="form-row mb-2">
+                <label style="min-width:100px">SSH Port:</label>
+                <input type="text" id="ssh-port" value="${config.port || '22'}" style="width:80px;font-family:monospace">
+            </div>
+            <div class="form-row mb-2">
+                <label style="min-width:100px">Root Login:</label>
+                <select id="ssh-root"><option value="yes" ${config.permitRootLogin === 'yes' ? 'selected' : ''}>Yes</option><option value="no" ${config.permitRootLogin === 'no' ? 'selected' : ''}>No</option><option value="prohibit-password" ${config.permitRootLogin === 'prohibit-password' ? 'selected' : ''}>Key only</option></select>
+            </div>
+            <div class="form-row mb-2">
+                <label style="min-width:100px">Password Auth:</label>
+                <select id="ssh-pass-auth"><option value="yes" ${config.passwordAuthentication === 'yes' ? 'selected' : ''}>Yes</option><option value="no" ${config.passwordAuthentication === 'no' ? 'selected' : ''}>No</option></select>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="sshSaveConfig()">${icon('archive',12)} Save Config</button>`;
+
+        // Render keys
+        const tbody = document.getElementById('ssh-keys-list');
+        const keyList = keys.keys || [];
+        if (!keyList.length) { tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--fg3)">No SSH keys</td></tr>'; return; }
+        tbody.innerHTML = keyList.map(k => `
+            <tr>
+                <td class="mono text-sm">${k.type}</td>
+                <td>${k.comment}</td>
+                <td class="mono text-xs text-muted">${k.fingerprint}</td>
+                <td style="text-align:right"><button class="btn-icon danger" onclick="sshDelKey(${k.id})">${icon('trash',16)}</button></td>
+            </tr>`).join('');
+    } catch (e) { document.getElementById('ssh-keys-list').innerHTML = `<tr><td colspan="4" style="color:var(--red)">${e.message}</td></tr>`; }
+};
+
+window.sshAddKey = async () => {
+    const key = document.getElementById('ssh-key-input').value.trim();
+    if (!key) return alert('Paste an SSH public key');
+    try { await apiPost('/sshkeys', { key }); alert('Key added'); navigate('sshkeys'); } catch (e) { alert(e.message); }
+};
+
+window.sshDelKey = async (id) => {
+    if (!confirm('Delete this SSH key?')) return;
+    try { await apiDelete(`/sshkeys/${id}`); navigate('sshkeys'); } catch (e) { alert(e.message); }
+};
+
+window.sshSaveConfig = async () => {
+    try {
+        await apiPost('/sshkeys/config', {
+            port: document.getElementById('ssh-port').value,
+            permitRootLogin: document.getElementById('ssh-root').value,
+            passwordAuthentication: document.getElementById('ssh-pass-auth').value
+        });
+        alert('SSH config updated. Service reloaded.');
+    } catch (e) { alert(e.message); }
+};
+
+window.sshGenerate = async () => {
+    const type = document.getElementById('ssh-gen-type').value;
+    const comment = document.getElementById('ssh-gen-comment').value || 'myvps-generated';
+    try {
+        const r = await apiPost('/sshkeys/generate', { type, comment });
+        const w = window.open('', '_blank', 'width=700,height=500');
+        w.document.write(`<pre style="background:#1a1b26;color:#a9b1d6;padding:16px;font-size:13px;margin:0;white-space:pre-wrap">== PUBLIC KEY (add to remote servers) ==\n\n${r.publicKey}\n\n== PRIVATE KEY (save securely, do NOT share) ==\n\n${r.privateKey}</pre>`);
+    } catch (e) { alert(e.message); }
+};
+
+// ============ Cloud Backup ============
+pages.cloudbackup = async (el) => {
+    el.innerHTML = `<h1 class="page-title">Cloud Backup</h1>
+        <div class="card mb-4">
+            <h3>Add Backup Destination</h3>
+            <div class="form-row mb-2">
+                <input type="text" id="cb-name" placeholder="Destination name">
+                <select id="cb-type" onchange="cbTypeChange()">
+                    <option value="s3">Amazon S3 / Wasabi</option>
+                    <option value="rsync">Remote Server (rsync)</option>
+                    <option value="rclone">Rclone (Google Drive, etc.)</option>
+                </select>
+            </div>
+            <div id="cb-s3-fields">
+                <div class="form-row mb-2">
+                    <input type="text" id="cb-bucket" placeholder="Bucket name">
+                    <input type="text" id="cb-region" placeholder="Region (us-east-1)" value="us-east-1">
+                </div>
+                <div class="form-row mb-2">
+                    <input type="text" id="cb-access-key" placeholder="Access Key" class="mono">
+                    <input type="password" id="cb-secret-key" placeholder="Secret Key" class="mono">
+                </div>
+            </div>
+            <div id="cb-rsync-fields" style="display:none">
+                <div class="form-row mb-2">
+                    <input type="text" id="cb-host" placeholder="Remote host IP">
+                    <input type="text" id="cb-username" placeholder="Username" value="root">
+                    <input type="text" id="cb-remote-path" placeholder="/backup" value="/backup">
+                </div>
+            </div>
+            <div id="cb-rclone-fields" style="display:none">
+                <div class="form-row mb-2">
+                    <input type="text" id="cb-rclone-path" placeholder="remote:path/to/backup">
+                </div>
+            </div>
+            <button class="btn btn-primary" id="cb-add">${icon('plus',14)} Add Destination</button>
+        </div>
+        <div class="grid grid-2 mb-4">
+            <div class="card">
+                <h3>Run Backup</h3>
+                <div class="form-row mb-2">
+                    <select id="cb-dest-sel"><option value="">Select destination...</option></select>
+                    <select id="cb-domain-sel"><option value="">Full server backup</option></select>
+                    <select id="cb-bk-type"><option value="full">Files</option><option value="database">Database</option></select>
+                </div>
+                <button class="btn btn-primary" onclick="cbRunBackup()">${icon('cloud',14)} Backup Now</button>
+            </div>
+            <div class="card">
+                <h3>Available Tools</h3>
+                <div id="cb-tools">Loading...</div>
+            </div>
+        </div>
+        <div class="card" style="padding:0;overflow:auto">
+            <h3 style="padding:16px 16px 0">Backup History</h3>
+            <table><thead><tr><th>Destination</th><th>File</th><th>Size</th><th>Date</th><th>Status</th></tr></thead>
+            <tbody id="cb-history"><tr><td colspan="5" style="text-align:center;padding:30px;color:var(--fg3)">Loading...</td></tr></tbody></table>
+        </div>`;
+
+    try {
+        const [dests, tools, history, domains] = await Promise.all([
+            apiGet('/cloudbackup/destinations'), apiGet('/cloudbackup/tools'),
+            apiGet('/cloudbackup/history'), apiGet('/domains')
+        ]);
+
+        // Populate selects
+        const destSel = document.getElementById('cb-dest-sel');
+        (dests.destinations || []).forEach(d => { const o = document.createElement('option'); o.value = d.id; o.textContent = `${d.name} (${d.type})`; destSel.appendChild(o); });
+        const domSel = document.getElementById('cb-domain-sel');
+        (domains.domains || []).forEach(d => { const o = document.createElement('option'); o.value = d.domain; o.textContent = d.domain; domSel.appendChild(o); });
+
+        // Tools
+        document.getElementById('cb-tools').innerHTML = `
+            <div class="flex gap-sm" style="flex-wrap:wrap">
+                <span class="badge ${tools.aws ? 'badge-green' : 'badge-red'}">AWS CLI ${tools.aws ? '' : '(not installed)'}</span>
+                <span class="badge ${tools.rclone ? 'badge-green' : 'badge-red'}">rclone ${tools.rclone ? '' : '(not installed)'}</span>
+                <span class="badge ${tools.rsync ? 'badge-green' : 'badge-red'}">rsync ${tools.rsync ? '' : '(not installed)'}</span>
+            </div>`;
+
+        // History
+        const tbody = document.getElementById('cb-history');
+        const hist = history.history || [];
+        if (!hist.length) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:30px;color:var(--fg3)">No backup history</td></tr>'; }
+        else tbody.innerHTML = hist.map(h => `
+            <tr>
+                <td>${h.destination}</td>
+                <td class="mono text-sm">${h.file || '—'}</td>
+                <td class="mono text-sm">${h.size ? formatBytes(h.size) : '—'}</td>
+                <td class="text-sm">${new Date(h.date).toLocaleString()}</td>
+                <td>${badge(h.status === 'success' ? 'active' : 'inactive')}</td>
+            </tr>`).join('');
+    } catch (e) { document.getElementById('cb-history').innerHTML = `<tr><td colspan="5" style="color:var(--red)">${e.message}</td></tr>`; }
+
+    document.getElementById('cb-add').onclick = async () => {
+        const type = document.getElementById('cb-type').value;
+        const body = { name: document.getElementById('cb-name').value.trim(), type };
+        if (type === 's3') {
+            body.bucket = document.getElementById('cb-bucket').value.trim();
+            body.region = document.getElementById('cb-region').value.trim();
+            body.accessKey = document.getElementById('cb-access-key').value.trim();
+            body.secretKey = document.getElementById('cb-secret-key').value;
+        } else if (type === 'rsync') {
+            body.host = document.getElementById('cb-host').value.trim();
+            body.username = document.getElementById('cb-username').value.trim();
+            body.path = document.getElementById('cb-remote-path').value.trim();
+        } else if (type === 'rclone') {
+            body.path = document.getElementById('cb-rclone-path').value.trim();
+        }
+        if (!body.name) return alert('Name required');
+        try { await apiPost('/cloudbackup/destinations', body); alert('Destination added'); navigate('cloudbackup'); } catch (e) { alert(e.message); }
+    };
+};
+
+window.cbTypeChange = () => {
+    const type = document.getElementById('cb-type').value;
+    document.getElementById('cb-s3-fields').style.display = type === 's3' ? '' : 'none';
+    document.getElementById('cb-rsync-fields').style.display = type === 'rsync' ? '' : 'none';
+    document.getElementById('cb-rclone-fields').style.display = type === 'rclone' ? '' : 'none';
+};
+
+window.cbRunBackup = async () => {
+    const destinationId = document.getElementById('cb-dest-sel').value;
+    const domain = document.getElementById('cb-domain-sel').value;
+    const type = document.getElementById('cb-bk-type').value;
+    if (!destinationId) return alert('Select a destination');
+    if (!confirm('Start backup now?')) return;
+    try {
+        const r = await apiPost('/cloudbackup/run', { destinationId, domain, type });
+        alert(r.message);
+        navigate('cloudbackup');
+    } catch (e) { alert(e.message); }
+};
+
+// ============ Server Migration ============
+pages.migrate = async (el) => {
+    const srv = activeServer();
+    el.innerHTML = `<h1 class="page-title">Server Migration</h1>
+        <p class="text-muted mb-4">Export config from this server or import from another</p>
+        <div class="grid grid-2 mb-4">
+            <div class="card">
+                <h3>${icon('upload',18)} Export from ${srv?.name || 'this server'}</h3>
+                <p class="text-sm text-muted mb-2">Export domains, databases, nginx configs, PHP pools, crontab</p>
+                <button class="btn btn-primary" onclick="migrateExport()">${icon('download',14)} Export Config</button>
+            </div>
+            <div class="card">
+                <h3>${icon('download',18)} Import to ${srv?.name || 'this server'}</h3>
+                <p class="text-sm text-muted mb-2">Import config JSON exported from another server</p>
+                <textarea id="mig-import" placeholder="Paste exported JSON here..." style="width:100%;height:100px;font-family:monospace;font-size:12px;background:var(--bg3);color:var(--fg);border:1px solid var(--border);border-radius:var(--radius);padding:8px;resize:vertical"></textarea>
+                <button class="btn btn-primary mt-2" onclick="migrateImport()">${icon('upload',14)} Import Config</button>
+            </div>
+        </div>
+        <div class="card mb-4">
+            <h3>${icon('shuffle',18)} Sync Files (rsync)</h3>
+            <p class="text-sm text-muted mb-2">Sync files from a remote server to this server</p>
+            <div class="form-row mb-2">
+                <input type="text" id="mig-source" placeholder="root@old-server:/var/www/" style="flex:1;font-family:monospace">
+                <input type="text" id="mig-dest" placeholder="/var/www/" value="/var/www/" style="font-family:monospace">
+            </div>
+            <button class="btn btn-secondary" onclick="migrateSync()">${icon('refresh',14)} Sync Files</button>
+        </div>
+        ${state.servers.length > 1 ? `
+        <div class="card">
+            <h3>${icon('server',18)} Cross-Server Migration</h3>
+            <p class="text-sm text-muted mb-2">Export from one connected server and import to another</p>
+            <div class="form-row">
+                <select id="mig-from"><option value="">Source server...</option>${state.servers.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}</select>
+                <span style="padding:6px">&rarr;</span>
+                <select id="mig-to"><option value="">Target server...</option>${state.servers.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}</select>
+                <button class="btn btn-primary" onclick="migrateCross()">${icon('truck',14)} Migrate</button>
+            </div>
+        </div>` : '<div class="card"><p class="text-muted">Add more servers to enable cross-server migration</p></div>'}
+        <div class="card hidden mt-4" id="mig-result">
+            <h3>Result</h3>
+            <pre id="mig-output" class="mono text-sm" style="background:var(--bg3);padding:12px;border-radius:var(--radius);white-space:pre-wrap;max-height:400px;overflow-y:auto"></pre>
+        </div>`;
+};
+
+window.migrateExport = async () => {
+    try {
+        const data = await apiGet('/migrate/export');
+        const json = JSON.stringify(data, null, 2);
+        document.getElementById('mig-result').classList.remove('hidden');
+        document.getElementById('mig-output').textContent = json;
+        // Also copy to clipboard
+        navigator.clipboard.writeText(json).then(() => {}).catch(() => {});
+        alert(`Exported: ${data.domains?.length || 0} domains, ${data.databases?.length || 0} databases, ${Object.keys(data.nginx || {}).length} nginx configs`);
+    } catch (e) { alert(e.message); }
+};
+
+window.migrateImport = async () => {
+    const json = document.getElementById('mig-import').value.trim();
+    if (!json) return alert('Paste export JSON');
+    try {
+        const data = JSON.parse(json);
+        if (!confirm(`Import ${data.domains?.length || 0} domains, ${Object.keys(data.nginx || {}).length} nginx configs?`)) return;
+        const r = await apiPost('/migrate/import', data);
+        document.getElementById('mig-result').classList.remove('hidden');
+        document.getElementById('mig-output').textContent = JSON.stringify(r.results, null, 2);
+        alert(r.message);
+    } catch (e) { alert(e.message); }
+};
+
+window.migrateSync = async () => {
+    const source = document.getElementById('mig-source').value.trim();
+    const destination = document.getElementById('mig-dest').value.trim();
+    if (!source || !destination) return alert('Source and destination required');
+    if (!confirm(`Sync files from ${source} to ${destination}?`)) return;
+    try {
+        const r = await apiPost('/migrate/sync', { source, destination });
+        document.getElementById('mig-result').classList.remove('hidden');
+        document.getElementById('mig-output').textContent = r.output || r.message;
+    } catch (e) { alert(e.message); }
+};
+
+window.migrateCross = async () => {
+    const fromId = document.getElementById('mig-from').value;
+    const toId = document.getElementById('mig-to').value;
+    if (!fromId || !toId) return alert('Select source and target servers');
+    if (fromId === toId) return alert('Source and target must be different');
+    const fromSrv = state.servers.find(s => s.id === fromId);
+    const toSrv = state.servers.find(s => s.id === toId);
+    if (!confirm(`Migrate config from ${fromSrv.name} to ${toSrv.name}?`)) return;
+
+    try {
+        // Export from source
+        const exportRes = await fetch(`${fromSrv.url}/api/migrate/export`, {
+            headers: { 'Authorization': `Bearer ${fromSrv.token}` }
+        });
+        const exportData = await exportRes.json();
+
+        // Import to target
+        const importRes = await fetch(`${toSrv.url}/api/migrate/import`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${toSrv.token}` },
+            body: JSON.stringify(exportData)
+        });
+        const importResult = await importRes.json();
+
+        document.getElementById('mig-result').classList.remove('hidden');
+        document.getElementById('mig-output').textContent = JSON.stringify(importResult.results, null, 2);
+        alert(`Migration complete: ${importResult.results?.domains?.length || 0} domains, ${importResult.results?.nginx?.length || 0} nginx configs`);
     } catch (e) { alert(e.message); }
 };
