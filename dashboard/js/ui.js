@@ -75,6 +75,14 @@ function renderApp() {
         ['cache', 'hdd', 'Cache'],
         ['backup', 'archive', 'Backup'],
         ['monitor', 'activity', 'Monitor'],
+        ['files', 'folder', 'File Manager'],
+        ['terminal', 'terminal', 'Terminal'],
+        ['proxy', 'shuffle', 'Proxy'],
+        ['cron', 'clock', 'Cron Jobs'],
+        ['deploy', 'rocket', 'Deploy'],
+        ['ftp', 'upload', 'FTP'],
+        ['docker', 'box', 'Docker'],
+        ['pm2', 'cpu', 'PM2'],
         ['servers', 'monitor', 'Servers'],
     ];
 

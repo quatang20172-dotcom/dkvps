@@ -27,6 +27,14 @@ const php = require('./src/routes/php');
 const firewall = require('./src/routes/firewall');
 const cache = require('./src/routes/cache');
 const backup = require('./src/routes/backup');
+const files = require('./src/routes/files');
+const cron = require('./src/routes/cron');
+const proxy = require('./src/routes/proxy');
+const ftp = require('./src/routes/ftp');
+const deploy = require('./src/routes/deploy');
+const docker = require('./src/routes/docker');
+const pm2Routes = require('./src/routes/pm2');
+const terminal = require('./src/routes/terminal');
 const { setupWS } = require('./src/utils/ws');
 const { loadConfig } = require('./src/utils/config');
 
@@ -84,6 +92,19 @@ app.use('/api/php', authMiddleware, php);
 app.use('/api/firewall', authMiddleware, firewall);
 app.use('/api/cache', authMiddleware, cache);
 app.use('/api/backup', authMiddleware, backup);
+app.use('/api/files', authMiddleware, files);
+app.use('/api/cron', authMiddleware, cron);
+app.use('/api/proxy', authMiddleware, proxy);
+app.use('/api/ftp', authMiddleware, ftp);
+app.use('/api/deploy', authMiddleware, deploy);
+app.use('/api/docker', authMiddleware, docker);
+app.use('/api/pm2', authMiddleware, pm2Routes);
+app.use('/api/terminal', authMiddleware, terminal);
+
+// Public webhook trigger endpoint (auth via token in URL)
+app.post('/api/deploy/trigger/:token', (req, res, next) => {
+    deploy.handle ? deploy.handle(req, res, next) : next();
+});
 
 // Serve static dashboard (optional - dashboard can also run standalone)
 const dashboardPath = path.join(__dirname, '..', 'dashboard');
@@ -95,6 +116,9 @@ if (fs.existsSync(dashboardPath)) {
 // WebSocket for real-time monitoring
 const wss = new WebSocket.Server({ server, path: '/ws' });
 setupWS(wss, JWT_SECRET);
+
+// Terminal WebSocket
+terminal.setupTerminalWS(server, jwt, JWT_SECRET);
 
 // Error handler
 app.use((err, req, res, next) => {

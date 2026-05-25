@@ -520,3 +520,500 @@ window.switchServer = (id) => {
     renderApp();
     connectWS();
 };
+
+// ============ File Manager ============
+let filePath = '/var/www';
+
+pages.files = async (el) => {
+    el.innerHTML = `<h1 class="page-title">File Manager</h1>
+        <div class="card mb-4">
+            <div class="flex-between">
+                <div class="flex gap-sm" style="flex:1">
+                    <button class="btn btn-secondary btn-sm" onclick="fileUp()" title="Up">${icon('folder',14)} ..</button>
+                    <input type="text" id="fm-path" value="${filePath}" style="flex:1;font-family:monospace;font-size:13px">
+                    <button class="btn btn-primary btn-sm" onclick="fileGo()">${icon('refresh',14)} Go</button>
+                </div>
+                <div class="flex gap-sm" style="margin-left:8px">
+                    <button class="btn btn-secondary btn-sm" onclick="fileNew('file')">${icon('file',14)} New File</button>
+                    <button class="btn btn-secondary btn-sm" onclick="fileNew('directory')">${icon('folder',14)} New Folder</button>
+                </div>
+            </div>
+        </div>
+        <div class="card" style="padding:0;overflow:auto">
+            <table><thead><tr><th>Name</th><th>Size</th><th>Permissions</th><th>Modified</th><th style="text-align:right">Actions</th></tr></thead>
+            <tbody id="fm-list"><tr><td colspan="5" style="text-align:center;padding:30px;color:var(--fg3)">Loading...</td></tr></tbody></table>
+        </div>
+        <div class="card hidden mt-4" id="fm-editor">
+            <div class="flex-between mb-2">
+                <h3 id="fm-editor-title">Edit File</h3>
+                <div class="flex gap-sm">
+                    <button class="btn btn-primary btn-sm" onclick="fileSave()">${icon('archive',14)} Save</button>
+                    <button class="btn btn-secondary btn-sm" onclick="fileCloseEditor()">Close</button>
+                </div>
+            </div>
+            <textarea id="fm-content" style="width:100%;height:400px;font-family:monospace;font-size:13px;background:var(--bg3);color:var(--fg);border:1px solid var(--border);border-radius:var(--radius);padding:12px;resize:vertical"></textarea>
+        </div>`;
+    loadFiles();
+};
+
+async function loadFiles() {
+    try {
+        const data = await apiGet(`/files/list?path=${encodeURIComponent(filePath)}`);
+        filePath = data.path;
+        document.getElementById('fm-path').value = filePath;
+        const tbody = document.getElementById('fm-list');
+        if (!data.files.length) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:30px;color:var(--fg3)">Empty directory</td></tr>'; return; }
+        tbody.innerHTML = data.files.map(f => {
+            const isDir = f.type === 'directory';
+            const sizeStr = isDir ? '—' : formatBytes(f.size);
+            const modStr = f.modified ? new Date(f.modified).toLocaleString() : '—';
+            return `<tr>
+                <td><span class="flex gap-sm" style="cursor:${isDir ? 'pointer' : 'default'}" ${isDir ? `onclick="fileNav('${f.name}')"` : ''}>
+                    ${icon(isDir ? 'folder' : 'file', 16)} <strong>${f.name}</strong>
+                </span></td>
+                <td class="mono text-sm">${sizeStr}</td>
+                <td class="mono text-sm">${f.permissions || '—'}</td>
+                <td class="text-sm text-muted">${modStr}</td>
+                <td style="text-align:right">
+                    ${!isDir ? `<button class="btn-icon" title="Edit" onclick="fileEdit('${f.name}')">${icon('edit',16)}</button>` : ''}
+                    <button class="btn-icon danger" title="Delete" onclick="fileDel('${f.name}')">${icon('trash',16)}</button>
+                </td>
+            </tr>`;
+        }).join('');
+    } catch (e) { document.getElementById('fm-list').innerHTML = `<tr><td colspan="5" style="color:var(--red)">${e.message}</td></tr>`; }
+}
+
+window.fileNav = (name) => { filePath = filePath.replace(/\/$/, '') + '/' + name; loadFiles(); };
+window.fileUp = () => { const p = filePath.split('/'); p.pop(); filePath = p.join('/') || '/'; loadFiles(); };
+window.fileGo = () => { filePath = document.getElementById('fm-path').value.trim() || '/'; loadFiles(); };
+
+window.fileNew = async (type) => {
+    const name = prompt(`New ${type} name:`);
+    if (!name) return;
+    const fp = filePath.replace(/\/$/, '') + '/' + name;
+    try { await apiPost('/files/create', { path: fp, type }); loadFiles(); } catch (e) { alert(e.message); }
+};
+
+window.fileDel = async (name) => {
+    if (!confirm(`Delete ${name}?`)) return;
+    const fp = filePath.replace(/\/$/, '') + '/' + name;
+    try { await apiPost('/files/delete', { path: fp }); loadFiles(); } catch (e) { alert(e.message); }
+};
+
+let editingFile = '';
+window.fileEdit = async (name) => {
+    const fp = filePath.replace(/\/$/, '') + '/' + name;
+    try {
+        const data = await apiGet(`/files/read?path=${encodeURIComponent(fp)}`);
+        editingFile = fp;
+        document.getElementById('fm-editor').classList.remove('hidden');
+        document.getElementById('fm-editor-title').textContent = 'Edit: ' + name;
+        document.getElementById('fm-content').value = data.content;
+    } catch (e) { alert(e.message); }
+};
+
+window.fileSave = async () => {
+    const content = document.getElementById('fm-content').value;
+    try { await apiPost('/files/save', { path: editingFile, content }); alert('Saved'); } catch (e) { alert(e.message); }
+};
+
+window.fileCloseEditor = () => { document.getElementById('fm-editor').classList.add('hidden'); };
+
+// ============ Terminal ============
+pages.terminal = async (el) => {
+    el.innerHTML = `<h1 class="page-title">Terminal</h1>
+        <div class="card">
+            <div id="term-output" style="background:#1a1b26;color:#a9b1d6;font-family:monospace;font-size:13px;padding:12px;border-radius:var(--radius);height:400px;overflow-y:auto;white-space:pre-wrap;word-wrap:break-word"></div>
+            <div class="flex gap-sm mt-2">
+                <span class="mono text-sm" style="color:var(--green);padding:6px 0">$</span>
+                <input type="text" id="term-input" placeholder="Type command..." style="flex:1;font-family:monospace;font-size:13px;background:var(--bg3);color:var(--fg);border:1px solid var(--border)">
+                <button class="btn btn-primary btn-sm" onclick="termExec()">${icon('play',14)} Run</button>
+            </div>
+        </div>
+        <p class="text-sm text-muted mt-2">Commands run on the VPS as root. Use with caution.</p>`;
+
+    document.getElementById('term-input').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') termExec();
+    });
+    document.getElementById('term-output').textContent = 'Welcome to MyVPS Terminal\nType a command and press Enter.\n\n';
+};
+
+window.termExec = async () => {
+    const input = document.getElementById('term-input');
+    const output = document.getElementById('term-output');
+    const cmd = input.value.trim();
+    if (!cmd) return;
+    output.textContent += `$ ${cmd}\n`;
+    input.value = '';
+    try {
+        const r = await apiPost('/terminal/exec', { command: cmd });
+        if (r.stdout) output.textContent += r.stdout + '\n';
+        if (r.stderr) output.textContent += r.stderr + '\n';
+    } catch (e) { output.textContent += `Error: ${e.message}\n`; }
+    output.scrollTop = output.scrollHeight;
+};
+
+// ============ Proxy ============
+pages.proxy = async (el) => {
+    el.innerHTML = `<h1 class="page-title">Reverse Proxy</h1>
+        <div class="card mb-4">
+            <h3>Create Proxy</h3>
+            <p class="text-sm text-muted mb-2">Route a domain to a backend app (Node.js, Python, etc.)</p>
+            <div class="form-row">
+                <input type="text" id="px-domain" placeholder="app.example.com">
+                <input type="text" id="px-target" placeholder="http://127.0.0.1:3000">
+                <button class="btn btn-primary" id="px-add">${icon('plus',14)} Create Proxy</button>
+            </div>
+        </div>
+        <div class="card" style="padding:0;overflow:auto">
+            <table><thead><tr><th>Domain</th><th>Target</th><th>SSL</th><th style="text-align:right">Actions</th></tr></thead>
+            <tbody id="px-list"><tr><td colspan="4" style="text-align:center;padding:30px;color:var(--fg3)">Loading...</td></tr></tbody></table>
+        </div>`;
+
+    document.getElementById('px-add').onclick = async () => {
+        const domain = document.getElementById('px-domain').value.trim();
+        const target = document.getElementById('px-target').value.trim();
+        if (!domain || !target) return alert('Domain and target required');
+        try { await apiPost('/proxy', { domain, target }); navigate('proxy'); } catch (e) { alert(e.message); }
+    };
+
+    try {
+        const data = await apiGet('/proxy');
+        const tbody = document.getElementById('px-list');
+        const proxies = data.proxies || [];
+        if (!proxies.length) { tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--fg3)">No proxies configured</td></tr>'; return; }
+        tbody.innerHTML = proxies.map(p => `
+            <tr>
+                <td><strong>${p.domain}</strong></td>
+                <td class="mono text-sm">${p.target}</td>
+                <td>${p.ssl ? badge('active') : badge('inactive')}</td>
+                <td style="text-align:right">
+                    <button class="btn-icon danger" title="Delete" onclick="proxyDel('${p.domain}')">${icon('trash',16)}</button>
+                </td>
+            </tr>`).join('');
+    } catch (e) { document.getElementById('px-list').innerHTML = `<tr><td colspan="4" style="color:var(--red)">${e.message}</td></tr>`; }
+};
+
+window.proxyDel = async (domain) => {
+    if (!confirm(`Delete proxy for ${domain}?`)) return;
+    try { await apiDelete(`/proxy/${domain}`); navigate('proxy'); } catch (e) { alert(e.message); }
+};
+
+// ============ Cron Jobs ============
+pages.cron = async (el) => {
+    el.innerHTML = `<h1 class="page-title">Cron Jobs</h1>
+        <div class="card mb-4">
+            <h3>Add Cron Job</h3>
+            <div class="form-row mb-2">
+                <select id="cron-preset">
+                    <option value="">Custom schedule...</option>
+                    <option value="* * * * *">Every minute</option>
+                    <option value="*/5 * * * *">Every 5 minutes</option>
+                    <option value="0 * * * *">Every hour</option>
+                    <option value="0 0 * * *">Daily (midnight)</option>
+                    <option value="0 2 * * *">Daily (2 AM)</option>
+                    <option value="0 0 * * 0">Weekly (Sunday)</option>
+                    <option value="0 0 1 * *">Monthly</option>
+                </select>
+                <input type="text" id="cron-schedule" placeholder="* * * * *" style="max-width:150px;font-family:monospace">
+            </div>
+            <div class="form-row">
+                <input type="text" id="cron-cmd" placeholder="Command to run" style="flex:1;font-family:monospace">
+                <button class="btn btn-primary" id="cron-add">${icon('plus',14)} Add</button>
+            </div>
+        </div>
+        <div class="card" style="padding:0;overflow:auto">
+            <table><thead><tr><th>Schedule</th><th>Command</th><th style="text-align:right">Actions</th></tr></thead>
+            <tbody id="cron-list"><tr><td colspan="3" style="text-align:center;padding:30px;color:var(--fg3)">Loading...</td></tr></tbody></table>
+        </div>`;
+
+    document.getElementById('cron-preset').onchange = function() {
+        if (this.value) document.getElementById('cron-schedule').value = this.value;
+    };
+
+    document.getElementById('cron-add').onclick = async () => {
+        const schedule = document.getElementById('cron-schedule').value.trim();
+        const command = document.getElementById('cron-cmd').value.trim();
+        if (!schedule || !command) return alert('Schedule and command required');
+        try { await apiPost('/cron', { schedule, command }); navigate('cron'); } catch (e) { alert(e.message); }
+    };
+
+    try {
+        const data = await apiGet('/cron');
+        const tbody = document.getElementById('cron-list');
+        const jobs = data.jobs || [];
+        if (!jobs.length) { tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:30px;color:var(--fg3)">No cron jobs</td></tr>'; return; }
+        tbody.innerHTML = jobs.map(j => `
+            <tr>
+                <td class="mono text-sm">${j.schedule}</td>
+                <td class="mono text-sm" style="max-width:400px;overflow:hidden;text-overflow:ellipsis">${j.command}</td>
+                <td style="text-align:right">
+                    <button class="btn-icon danger" title="Delete" onclick="cronDel(${j.id})">${icon('trash',16)}</button>
+                </td>
+            </tr>`).join('');
+    } catch (e) { document.getElementById('cron-list').innerHTML = `<tr><td colspan="3" style="color:var(--red)">${e.message}</td></tr>`; }
+};
+
+window.cronDel = async (id) => {
+    if (!confirm('Delete this cron job?')) return;
+    try { await apiDelete(`/cron/${id}`); navigate('cron'); } catch (e) { alert(e.message); }
+};
+
+// ============ Auto Deploy ============
+pages.deploy = async (el) => {
+    el.innerHTML = `<h1 class="page-title">Auto Deploy</h1>
+        <div class="card mb-4">
+            <h3>Create Webhook</h3>
+            <p class="text-sm text-muted mb-2">Auto-deploy from GitHub/GitLab push events</p>
+            <div class="form-row mb-2">
+                <input type="text" id="dpl-name" placeholder="Project name">
+                <input type="text" id="dpl-dir" placeholder="/var/www/example.com" style="font-family:monospace">
+            </div>
+            <div class="form-row">
+                <input type="text" id="dpl-cmd" placeholder="git pull && npm run build" style="flex:1;font-family:monospace">
+                <button class="btn btn-primary" id="dpl-add">${icon('plus',14)} Create</button>
+            </div>
+        </div>
+        <div class="card" style="padding:0;overflow:auto">
+            <table><thead><tr><th>Name</th><th>Directory</th><th>Command</th><th>Last Run</th><th style="text-align:right">Actions</th></tr></thead>
+            <tbody id="dpl-list"><tr><td colspan="5" style="text-align:center;padding:30px;color:var(--fg3)">Loading...</td></tr></tbody></table>
+        </div>`;
+
+    document.getElementById('dpl-add').onclick = async () => {
+        const name = document.getElementById('dpl-name').value.trim();
+        const directory = document.getElementById('dpl-dir').value.trim();
+        const command = document.getElementById('dpl-cmd').value.trim();
+        if (!name || !directory || !command) return alert('All fields required');
+        try {
+            const r = await apiPost('/deploy', { name, directory, command });
+            const srv = activeServer();
+            alert(`Webhook created!\n\nURL: ${srv.url}/api/deploy/trigger/${r.webhook.token}\n\nAdd this URL to your GitHub/GitLab webhook settings.`);
+            navigate('deploy');
+        } catch (e) { alert(e.message); }
+    };
+
+    try {
+        const data = await apiGet('/deploy');
+        const tbody = document.getElementById('dpl-list');
+        const webhooks = data.webhooks || [];
+        if (!webhooks.length) { tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:30px;color:var(--fg3)">No webhooks</td></tr>'; return; }
+        const srv = activeServer();
+        tbody.innerHTML = webhooks.map(w => `
+            <tr>
+                <td><strong>${w.name}</strong></td>
+                <td class="mono text-sm">${w.directory}</td>
+                <td class="mono text-sm" style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${w.command}</td>
+                <td class="text-sm">${w.lastRun ? new Date(w.lastRun).toLocaleString() : '—'} ${w.lastStatus ? badge(w.lastStatus === 'success' ? 'active' : 'inactive') : ''}</td>
+                <td style="text-align:right">
+                    <button class="btn-icon" title="Copy URL" onclick="dplCopy('${srv.url}/api/deploy/trigger/${w.token}')">${icon('copy',16)}</button>
+                    <button class="btn-icon danger" title="Delete" onclick="dplDel('${w.id}')">${icon('trash',16)}</button>
+                </td>
+            </tr>`).join('');
+    } catch (e) { document.getElementById('dpl-list').innerHTML = `<tr><td colspan="5" style="color:var(--red)">${e.message}</td></tr>`; }
+};
+
+window.dplCopy = (url) => { navigator.clipboard.writeText(url).then(() => alert('Webhook URL copied!')); };
+window.dplDel = async (id) => {
+    if (!confirm('Delete this webhook?')) return;
+    try { await apiDelete(`/deploy/${id}`); navigate('deploy'); } catch (e) { alert(e.message); }
+};
+
+// ============ FTP Management ============
+pages.ftp = async (el) => {
+    el.innerHTML = `<h1 class="page-title">FTP Management</h1>
+        <div class="card mb-4">
+            <h3>Create FTP User</h3>
+            <div class="form-row">
+                <input type="text" id="ftp-user" placeholder="Username">
+                <input type="password" id="ftp-pass" placeholder="Password">
+                <input type="text" id="ftp-home" placeholder="/var/www/domain (optional)" style="font-family:monospace">
+                <button class="btn btn-primary" id="ftp-add">${icon('plus',14)} Create</button>
+            </div>
+        </div>
+        <div class="card mb-4">
+            <h3>FTP Server Status</h3>
+            <div id="ftp-status">Loading...</div>
+        </div>
+        <div class="card" style="padding:0;overflow:auto">
+            <table><thead><tr><th>Username</th><th>Home Directory</th><th style="text-align:right">Actions</th></tr></thead>
+            <tbody id="ftp-list"><tr><td colspan="3" style="text-align:center;padding:30px;color:var(--fg3)">Loading...</td></tr></tbody></table>
+        </div>`;
+
+    document.getElementById('ftp-add').onclick = async () => {
+        const username = document.getElementById('ftp-user').value.trim();
+        const password = document.getElementById('ftp-pass').value;
+        const home = document.getElementById('ftp-home').value.trim();
+        if (!username || !password) return alert('Username and password required');
+        try { await apiPost('/ftp', { username, password, home }); alert('FTP user created'); navigate('ftp'); } catch (e) { alert(e.message); }
+    };
+
+    try {
+        const [status, users] = await Promise.all([apiGet('/ftp/status'), apiGet('/ftp')]);
+        document.getElementById('ftp-status').innerHTML = `
+            <div class="flex gap-sm">
+                <span>vsftpd: ${badge(status.vsftpd)}</span>
+            </div>`;
+        const tbody = document.getElementById('ftp-list');
+        const ftpUsers = users.users || [];
+        if (!ftpUsers.length) { tbody.innerHTML = '<tr><td colspan="3" style="text-align:center;padding:30px;color:var(--fg3)">No FTP users</td></tr>'; return; }
+        tbody.innerHTML = ftpUsers.map(u => `
+            <tr>
+                <td><strong>${u.username}</strong></td>
+                <td class="mono text-sm">${u.home || '—'}</td>
+                <td style="text-align:right">
+                    <button class="btn-icon danger" title="Delete" onclick="ftpDel('${u.username}')">${icon('trash',16)}</button>
+                </td>
+            </tr>`).join('');
+    } catch (e) { document.getElementById('ftp-list').innerHTML = `<tr><td colspan="3" style="color:var(--red)">${e.message}</td></tr>`; }
+};
+
+window.ftpDel = async (username) => {
+    if (!confirm(`Delete FTP user ${username}?`)) return;
+    try { await apiDelete(`/ftp/${username}`); navigate('ftp'); } catch (e) { alert(e.message); }
+};
+
+// ============ Docker Manager ============
+pages.docker = async (el) => {
+    el.innerHTML = `<h1 class="page-title">Docker Manager</h1>
+        <div class="card mb-4" id="docker-status">Loading Docker status...</div>
+        <div class="card mb-4">
+            <h3>Containers</h3>
+            <div style="overflow:auto">
+                <table><thead><tr><th>Name</th><th>Image</th><th>Status</th><th>Ports</th><th style="text-align:right">Actions</th></tr></thead>
+                <tbody id="dk-containers"><tr><td colspan="5" style="text-align:center;padding:30px;color:var(--fg3)">Loading...</td></tr></tbody></table>
+            </div>
+        </div>
+        <div class="card">
+            <h3>Images</h3>
+            <div style="overflow:auto">
+                <table><thead><tr><th>Repository</th><th>Tag</th><th>Size</th><th style="text-align:right">Actions</th></tr></thead>
+                <tbody id="dk-images"><tr><td colspan="4" style="text-align:center;padding:30px;color:var(--fg3)">Loading...</td></tr></tbody></table>
+            </div>
+        </div>`;
+
+    try {
+        const [status, containers, images] = await Promise.all([
+            apiGet('/docker/status'), apiGet('/docker/containers'), apiGet('/docker/images')
+        ]);
+        document.getElementById('docker-status').innerHTML = `
+            <div class="flex-between">
+                <div><strong>Docker</strong> ${badge(status.status)}</div>
+                <span class="mono text-sm">${status.version || 'Not installed'}</span>
+            </div>`;
+
+        const ct = document.getElementById('dk-containers');
+        const c = containers.containers || [];
+        if (!c.length) { ct.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:30px;color:var(--fg3)">No containers</td></tr>'; }
+        else ct.innerHTML = c.map(x => {
+            const running = x.status.toLowerCase().startsWith('up');
+            return `<tr>
+                <td><strong>${x.name}</strong></td>
+                <td class="mono text-sm">${x.image}</td>
+                <td>${badge(running ? 'active' : 'inactive')}</td>
+                <td class="mono text-sm">${x.ports || '—'}</td>
+                <td style="text-align:right">
+                    <button class="btn-icon" title="${running ? 'Stop' : 'Start'}" onclick="dkAction('${x.id}','${running ? 'stop' : 'start'}')">${icon(running ? 'stop' : 'play', 16)}</button>
+                    <button class="btn-icon" title="Restart" onclick="dkAction('${x.id}','restart')">${icon('refresh',16)}</button>
+                    <button class="btn-icon" title="Logs" onclick="dkLogs('${x.id}')">${icon('terminal',16)}</button>
+                    <button class="btn-icon danger" title="Remove" onclick="dkAction('${x.id}','rm')">${icon('trash',16)}</button>
+                </td>
+            </tr>`;
+        }).join('');
+
+        const ig = document.getElementById('dk-images');
+        const imgs = images.images || [];
+        if (!imgs.length) { ig.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:30px;color:var(--fg3)">No images</td></tr>'; }
+        else ig.innerHTML = imgs.map(x => `
+            <tr>
+                <td class="mono text-sm">${x.repository}</td>
+                <td>${x.tag}</td>
+                <td class="mono text-sm">${x.size}</td>
+                <td style="text-align:right"><button class="btn-icon danger" title="Remove" onclick="dkImgDel('${x.id}')">${icon('trash',16)}</button></td>
+            </tr>`).join('');
+    } catch (e) { document.getElementById('docker-status').innerHTML = `<p style="color:var(--red)">${e.message}</p>`; }
+};
+
+window.dkAction = async (id, action) => {
+    if (action === 'rm' && !confirm('Remove this container?')) return;
+    try { await apiPost(`/docker/containers/${id}/${action}`); setTimeout(() => navigate('docker'), 500); } catch (e) { alert(e.message); }
+};
+
+window.dkLogs = async (id) => {
+    try {
+        const r = await apiGet(`/docker/containers/${id}/logs`);
+        const w = window.open('', '_blank', 'width=800,height=600');
+        w.document.write(`<pre style="background:#1a1b26;color:#a9b1d6;padding:16px;font-size:13px;margin:0">${r.logs || 'No logs'}</pre>`);
+    } catch (e) { alert(e.message); }
+};
+
+window.dkImgDel = async (id) => {
+    if (!confirm('Remove this image?')) return;
+    try { await apiDelete(`/docker/images/${id}`); navigate('docker'); } catch (e) { alert(e.message); }
+};
+
+// ============ PM2 Manager ============
+pages.pm2 = async (el) => {
+    el.innerHTML = `<h1 class="page-title">PM2 Manager</h1>
+        <div class="card mb-4" id="pm2-status">Loading...</div>
+        <div class="card mb-4">
+            <h3>Add Application</h3>
+            <div class="form-row">
+                <input type="text" id="pm2-name" placeholder="App name">
+                <input type="text" id="pm2-script" placeholder="app.js or npm start" style="font-family:monospace">
+                <input type="text" id="pm2-cwd" placeholder="/var/www/app (optional)" style="font-family:monospace">
+                <button class="btn btn-primary" id="pm2-add">${icon('plus',14)} Start</button>
+            </div>
+        </div>
+        <div class="card" style="padding:0;overflow:auto">
+            <table><thead><tr><th>Name</th><th>Status</th><th>CPU</th><th>Memory</th><th>Restarts</th><th style="text-align:right">Actions</th></tr></thead>
+            <tbody id="pm2-list"><tr><td colspan="6" style="text-align:center;padding:30px;color:var(--fg3)">Loading...</td></tr></tbody></table>
+        </div>`;
+
+    document.getElementById('pm2-add').onclick = async () => {
+        const name = document.getElementById('pm2-name').value.trim();
+        const script = document.getElementById('pm2-script').value.trim();
+        const cwd = document.getElementById('pm2-cwd').value.trim();
+        if (!name || !script) return alert('Name and script required');
+        try { await apiPost('/pm2', { name, script, cwd }); navigate('pm2'); } catch (e) { alert(e.message); }
+    };
+
+    try {
+        const [status, procs] = await Promise.all([apiGet('/pm2/status'), apiGet('/pm2')]);
+        document.getElementById('pm2-status').innerHTML = `
+            <div class="flex-between">
+                <div><strong>PM2</strong> ${status.installed ? badge('active') : badge('inactive')}</div>
+                <span class="mono text-sm">${status.version || 'Not installed'}</span>
+            </div>`;
+
+        const tbody = document.getElementById('pm2-list');
+        const processes = procs.processes || [];
+        if (!processes.length) { tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--fg3)">No applications</td></tr>'; return; }
+        tbody.innerHTML = processes.map(p => `
+            <tr>
+                <td><strong>${p.name}</strong><br><span class="text-xs mono text-muted">${p.cwd || ''}</span></td>
+                <td>${badge(p.status === 'online' ? 'active' : p.status)}</td>
+                <td class="mono">${p.cpu}%</td>
+                <td class="mono">${formatBytes(p.memory)}</td>
+                <td class="mono">${p.restarts}</td>
+                <td style="text-align:right">
+                    <button class="btn-icon" title="Restart" onclick="pm2Act(${p.id},'restart')">${icon('refresh',16)}</button>
+                    <button class="btn-icon" title="${p.status === 'online' ? 'Stop' : 'Restart'}" onclick="pm2Act(${p.id},'${p.status === 'online' ? 'stop' : 'restart'}')">${icon(p.status === 'online' ? 'stop' : 'play', 16)}</button>
+                    <button class="btn-icon" title="Logs" onclick="pm2Logs(${p.id})">${icon('terminal',16)}</button>
+                    <button class="btn-icon danger" title="Delete" onclick="pm2Act(${p.id},'delete')">${icon('trash',16)}</button>
+                </td>
+            </tr>`).join('');
+    } catch (e) { document.getElementById('pm2-status').innerHTML = `<p style="color:var(--red)">${e.message}</p>`; }
+};
+
+window.pm2Act = async (id, action) => {
+    if (action === 'delete' && !confirm('Delete this app from PM2?')) return;
+    try { await apiPost(`/pm2/${id}/${action}`); setTimeout(() => navigate('pm2'), 500); } catch (e) { alert(e.message); }
+};
+
+window.pm2Logs = async (id) => {
+    try {
+        const r = await apiGet(`/pm2/${id}/logs`);
+        const w = window.open('', '_blank', 'width=800,height=600');
+        w.document.write(`<pre style="background:#1a1b26;color:#a9b1d6;padding:16px;font-size:13px;margin:0">${r.logs || 'No logs'}</pre>`);
+    } catch (e) { alert(e.message); }
+};
