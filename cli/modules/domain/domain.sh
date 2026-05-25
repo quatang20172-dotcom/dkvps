@@ -442,8 +442,13 @@ _create_phpfpm_pool() {
     local domain="$1"
     local username="$2"
     local port="$3"
+    local php_ver=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null || echo "8.1")
 
-    cat > "/etc/php-fpm.d/$domain.conf" <<EOF
+    local pool_dir="/etc/php-fpm.d"
+    [[ -d "/etc/php/${php_ver}/fpm/pool.d" ]] && pool_dir="/etc/php/${php_ver}/fpm/pool.d"
+    mkdir -p "$pool_dir"
+
+    cat > "$pool_dir/$domain.conf" <<EOF
 [$domain]
 user = $username
 group = $username
@@ -473,7 +478,12 @@ _create_nginx_vhost() {
     local username="$2"
     local port="$3"
 
-    cat > "/etc/nginx/conf.d/$domain.conf" <<EOF
+    local nginx_dir="/etc/nginx/conf.d"
+    if [[ -d "/etc/nginx/sites-available" ]]; then
+        nginx_dir="/etc/nginx/sites-available"
+    fi
+
+    cat > "$nginx_dir/$domain.conf" <<EOF
 server {
     listen 80;
     server_name $domain www.$domain;
@@ -525,6 +535,10 @@ server {
     }
 }
 EOF
+
+    if [[ -d "/etc/nginx/sites-enabled" ]] && [[ "$nginx_dir" == *"sites-available"* ]]; then
+        ln -sf "$nginx_dir/$domain.conf" "/etc/nginx/sites-enabled/$domain.conf"
+    fi
 }
 
 _install_wordpress() {

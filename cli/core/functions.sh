@@ -229,14 +229,27 @@ reload_nginx() {
 }
 
 restart_php() {
-    systemctl restart php-fpm.service
+    local php_ver=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null || echo "8.1")
+    if systemctl list-units --type=service | grep -q "php${php_ver}-fpm"; then
+        systemctl restart "php${php_ver}-fpm.service"
+    else
+        systemctl restart php-fpm.service 2>/dev/null
+    fi
     print_success "PHP-FPM restarted"
 }
 
 # Find next available PHP-FPM port
 find_available_fpm_port() {
+    local fpm_conf_dirs=("/etc/php-fpm.d" "/etc/php/*/fpm/pool.d")
     for (( n = $MYVPS_PHP_FPM_PORT_START; n <= $MYVPS_PHP_FPM_PORT_END; n++ )); do
-        if ! grep -rnw '/etc/php-fpm.d/' -e "$n" >> /dev/null 2>&1; then
+        local found=false
+        for dir in ${fpm_conf_dirs[@]}; do
+            if grep -rnw "$dir" -e "$n" >> /dev/null 2>&1; then
+                found=true
+                break
+            fi
+        done
+        if [[ "$found" == false ]]; then
             echo "$n"
             return 0
         fi
@@ -277,7 +290,9 @@ require_root() {
 
 check_services() {
     local nginx_status=$(service_status nginx)
-    local php_status=$(service_status php-fpm)
+    local php_ver=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null || echo "8.1")
+    local php_status=$(service_status "php${php_ver}-fpm")
+    [[ "$php_status" != "active" ]] && php_status=$(service_status php-fpm)
     local mariadb_status=$(service_status mariadb)
 
     if [[ "$nginx_status" != "active" ]] || [[ "$php_status" != "active" ]] || [[ "$mariadb_status" != "active" ]]; then
@@ -295,6 +310,9 @@ check_services() {
 # ============================================================
 
 json_status() {
+    local php_ver=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null || echo "8.1")
+    local php_svc="php-fpm"
+    systemctl is-active "php${php_ver}-fpm" &>/dev/null && php_svc="php${php_ver}-fpm"
     cat <<EOF
 {
   "ip": "$(get_public_ip)",
@@ -306,9 +324,9 @@ json_status() {
   "disk": "$(get_disk_info)",
   "services": {
     "nginx": "$(service_status nginx)",
-    "php_fpm": "$(service_status php-fpm)",
+    "php_fpm": "$(service_status $php_svc)",
     "mariadb": "$(service_status mariadb)",
-    "redis": "$(service_status redis)",
+    "redis": "$(service_status redis-server)",
     "memcached": "$(service_status memcached)",
     "fail2ban": "$(service_status fail2ban)"
   },

@@ -73,7 +73,6 @@ save_domain_config() {
     cat > "$MYVPS_USER_DIR/.$domain.conf" <<EOF
 # Domain Configuration: $domain
 # Created: $(date '+%Y-%m-%d %H:%M:%S')
-[domain]
 username=$username
 password=$password_auth
 password_sftp=$password_sftp
@@ -83,7 +82,7 @@ db_user=$db_user
 db_password=$db_password
 public_html=/home/$username/$domain/public_html
 php_version=${php_default_version:-8.1}
-created_at=$(date '+%Y-%m-%d %H:%M:%S')
+created_at='$(date '+%Y-%m-%d %H:%M:%S')'
 status=active
 EOF
     chmod 600 "$MYVPS_USER_DIR/.$domain.conf"

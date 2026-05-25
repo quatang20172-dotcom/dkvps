@@ -69,12 +69,26 @@ async function gatherStats() {
 }
 
 async function getServiceStatuses() {
-    const svcs = ['nginx', 'php-fpm', 'mariadb', 'redis', 'memcached', 'fail2ban', 'sshd'];
+    const svcs = ['nginx', 'mariadb', 'memcached', 'fail2ban', 'sshd'];
     const results = {};
     await Promise.all(svcs.map(async s => {
         const r = await runSafe(`systemctl is-active ${s} 2>/dev/null`);
         results[s] = (r.stdout || 'inactive').trim();
     }));
+    const phpVer = await runSafe("php -r 'echo PHP_MAJOR_VERSION.\".\".PHP_MINOR_VERSION;' 2>/dev/null");
+    const ver = (phpVer.stdout || '8.1').trim();
+    const phpFpm = await runSafe(`systemctl is-active php${ver}-fpm 2>/dev/null`);
+    results['php-fpm'] = (phpFpm.stdout || 'inactive').trim();
+    if (results['php-fpm'] === 'inactive') {
+        const fallback = await runSafe('systemctl is-active php-fpm 2>/dev/null');
+        results['php-fpm'] = (fallback.stdout || 'inactive').trim();
+    }
+    const redis = await runSafe('systemctl is-active redis-server 2>/dev/null');
+    if ((redis.stdout || '').trim() === 'active') results['redis'] = 'active';
+    else {
+        const r2 = await runSafe('systemctl is-active redis 2>/dev/null');
+        results['redis'] = (r2.stdout || 'inactive').trim();
+    }
     return results;
 }
 

@@ -42,10 +42,13 @@ show_status() {
     echo "  Disk:          $(echo $disk_info | tr '|' ' ')"
     echo ""
     print_line
+    local php_ver=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;' 2>/dev/null || echo "8.1")
+    local php_svc="php-fpm"
+    systemctl is-active "php${php_ver}-fpm" &>/dev/null && php_svc="php${php_ver}-fpm"
     echo "  Nginx:         $(service_status nginx)"
-    echo "  PHP-FPM:       $(service_status php-fpm)"
+    echo "  PHP-FPM:       $(service_status $php_svc)"
     echo "  MariaDB:       $(service_status mariadb)"
-    echo "  Redis:         $(service_status redis)"
+    echo "  Redis:         $(service_status redis-server)"
     echo "  Memcached:     $(service_status memcached)"
     echo "  Fail2Ban:      $(service_status fail2ban)"
     echo "  SSHD:          $(service_status sshd)"
