@@ -13,7 +13,12 @@
 
 REAL_SCRIPT="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
-CLI_DIR="${SCRIPT_DIR}"
+# When installed to /usr/bin, modules are at /etc/myvps/menu
+if [[ -d "/etc/myvps/menu/core" ]]; then
+    CLI_DIR="/etc/myvps/menu"
+else
+    CLI_DIR="${SCRIPT_DIR}"
+fi
 
 # Source core
 source "${CLI_DIR}/core/config.sh"

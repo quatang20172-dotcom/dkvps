@@ -6,7 +6,7 @@
 # Usage: bash <(curl -sL https://raw.githubusercontent.com/quatang20172-dotcom/dkvps/main/install.sh)
 #
 
-set -e
+set +e
 
 # Colors
 RED='\033[0;31m'
@@ -206,7 +206,11 @@ else
 fi
 
 # Hide PHP version
-sed -i "s/expose_php = On/expose_php = Off/" /etc/php.ini 2>/dev/null
+if [[ -f /etc/php.ini ]]; then
+    sed -i "s/expose_php = On/expose_php = Off/" /etc/php.ini
+elif [[ -f /etc/php/8.1/fpm/php.ini ]]; then
+    sed -i "s/expose_php = On/expose_php = Off/" /etc/php/8.1/fpm/php.ini
+fi
 
 systemctl enable php-fpm 2>/dev/null || systemctl enable php8.1-fpm 2>/dev/null
 systemctl start php-fpm 2>/dev/null || systemctl start php8.1-fpm 2>/dev/null
@@ -311,8 +315,15 @@ if [[ "$PKG_MANAGER" == "dnf" ]]; then
 fi
 
 # Nginx main config
+# Detect nginx user
+if id -u nginx &>/dev/null; then
+    NGINX_USER="nginx"
+else
+    NGINX_USER="www-data"
+fi
+
 cat > "/etc/nginx/nginx.conf" <<EOF
-user nginx;
+user $NGINX_USER;
 worker_processes $PROCESS;
 worker_rlimit_nofile 260000;
 error_log /var/log/nginx/error.log;
@@ -413,7 +424,7 @@ server {
         fastcgi_index index.php;
         include fastcgi_params;
         fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
-        fastcgi_pass unix:/run/php-fpm/www.sock;
+        fastcgi_pass unix:/run/php/php8.1-fpm.sock;
     }
 }
 EOF
@@ -438,7 +449,7 @@ echo "\$cfg['blowfish_secret'] = '$PMA_SECRET';" >> phpmyadmin/config.inc.php
 echo "\$cfg['TempDir'] = '/var/lib/phpmyadmin/tmp';" >> phpmyadmin/config.inc.php
 mkdir -p /var/lib/phpmyadmin/tmp
 chmod 700 /var/lib/phpmyadmin/tmp
-chown -R nginx:nginx /usr/share/nginx/myvps 2>/dev/null
+chown -R $NGINX_USER:$NGINX_USER /usr/share/nginx/myvps 2>/dev/null
 
 # ============================================================
 # Install MyVPS CLI
